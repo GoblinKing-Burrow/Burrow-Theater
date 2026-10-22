@@ -1,0 +1,26 @@
+{
+  "id": "burrow-theater",
+  "name": "Burrow Theater",
+  "version": "2026.10.22",
+  "server": "server/index.mjs",
+  "ui": {
+    "control": "ui/control.js",
+    "settings": "ui/settings.js"
+  },
+  "contributions": {
+    "settings": [
+      {
+        "id": "roles",
+        "navigation": {
+          "title": "Burrow Theater",
+          "description": "Manage SOUL roles for private, tool-free conversations."
+        },
+        "primary": {
+          "title": "Roles",
+          "description": "Create and refine the identities used in Theater conversations.",
+          "capability": "settingsUi"
+        }
+      }
+    ]
+  }
+}
