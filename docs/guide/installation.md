@@ -6,15 +6,16 @@ These guides describe the current Theater implementation, including per-role For
 
 ## What you need
 
-- A Burrow installation whose mod host supports Theater’s model-generation contract.
+- A Burrow installation whose mod host supports `context.models.list()` and the durable `context.models.generations.submit()` / `read()` contract used by Theater.
 - At least one configured text model available through Core.
+- A compatible host runtime; Theater declares Node.js **22.13 or newer** (its development workflow uses Node.js 24).
 - For optional scene images, compatible Core Forge image support and an available image-generation configuration.
 
 Theater uses Burrow’s existing model connections. There is no separate provider-key form in Theater.
 
 ## Install and enable
 
-Use **Settings → Mods → Mod sources** to install the Theater source supplied for your release, then explicitly enable the mod. Its manifest ID is `burrow-theater`; its display name is **Burrow Theater**.
+Use **Settings → Mods → Mod sources** to install the Theater source supplied for your release, then explicitly enable the mod. Its manifest ID is `burrow-theater`; its Settings display name is **Theater**.
 
 Open Theater’s control view for conversations. Open **Settings → Theater → Roles** to manage its saved identities.
 
@@ -31,4 +32,6 @@ A fresh role inventory supplies **The House Goblin**. You can use that role imme
 Use **Shift+Enter** for another line. The emoji button inserts an emoji into your draft.
 
 If no configured text model is available, configure one in Burrow first. If the role’s Forge setting is unavailable, you can still use ordinary text conversations.
+
+
 

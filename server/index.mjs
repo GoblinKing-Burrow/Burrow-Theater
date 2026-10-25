@@ -6,7 +6,7 @@ const IMAGE_DIRECTIVE = Object.freeze({
   close: ' -->',
   prompt: `# Optional image direction\nYou may request one image for your reply. This is not a tool call. If an image would genuinely add to the scene, append exactly one directive on its own final line using this exact form:\n<!-- BURROW_FORGE_IMAGE {\"prompt\":\"A complete standalone image prompt\"} -->\nThe JSON must contain only the string key \"prompt\". Do not mention the directive or image generation in your prose. Omit it entirely when an image would not help.`
 });
-const MAX = Object.freeze({ name: 120, soul: 48000, profile: 24000, message: 24000, imagePrompt: 4000, transcript: 400, outputTokens: 8192 });
+const MAX = Object.freeze({ name: 120, soul: 48000, profile: 24000, message: 24000, imagePrompt: 4000, transcript: 400, outputTokens: 8192, prompt: 100000 });
 const DEFAULT_ROLE = Object.freeze({
   id: 'house-goblin',
   name: 'The House Goblin',
@@ -160,7 +160,13 @@ function buildPrompt(role, conversation, roles, operatorProfile) {
   const transcript = conversation.messages.filter((message) => message.type !== 'forge_image').map((message) => `${message.role === 'user' ? operatorName : message.roleName || roles.find((item) => item.id === message.roleId)?.name || message.roleId || 'Role'}:\n${message.content}`).join('\n\n');
   const cast = conversation.roleIds.map((roleId) => roles.find((item) => item.id === roleId)?.name || roleId).join(', ');
   const player = [`Name: ${operatorName}`, operatorProfile?.profile || ''].filter(Boolean).join('\n\n');
-  return [role.soul, `# Theater boundary\n${FICTION_BOUNDARY}`, role.allowForgeImages ? IMAGE_DIRECTIVE.prompt : '', `# Player\n${player}`, `# Participants\n${cast}\nReply only as ${role.name}.`, '# Conversation', transcript, `${role.name}:`].filter(Boolean).join('\n\n');
+  const prompt = [role.soul, `# Theater boundary\n${FICTION_BOUNDARY}`, role.allowForgeImages ? IMAGE_DIRECTIVE.prompt : '', `# Player\n${player}`, `# Participants\n${cast}\nReply only as ${role.name}.`, '# Conversation', transcript, `${role.name}:`].filter(Boolean).join('\n\n');
+  validatePrompt(prompt);
+  return prompt;
+}
+
+function validatePrompt(prompt) {
+  if (typeof prompt !== 'string' || !prompt || prompt.length > MAX.prompt) fail('generation_prompt_limit', 413);
 }
 
 export async function activate(context) {
@@ -315,6 +321,8 @@ export async function activate(context) {
     if (!pending) return response(200, { ok: true, conversation: publicConversation(conversation) });
     let update = pending;
     try {
+      // Legacy persisted turns must also escape deterministic pre-admission failures.
+      if (!pending.jobId) validatePrompt(pending.generationRequest?.prompt);
       const job = pending.jobId
         ? await context.models.generations.read(pending.jobId)
         : (await context.models.generations.submit({ ...pending.generationRequest, idempotencyKey: `message-${pending.id}` })).job;
@@ -358,8 +366,10 @@ export async function activate(context) {
       }
     } catch (error) {
       context.logger.warn('Burrow Theater could not reconcile text generation', { conversationId, messageId: pending.id, error: error instanceof Error ? error.message : 'unknown' });
-      if (!pending.jobId) return response(200, { ok: true, conversation: publicConversation(conversation) });
-      update = { ...pending, status: 'failed', error: error instanceof Error ? error.message : 'Reply generation failed.', updatedAt: now() };
+      // Unknown admission outcomes retry the same idempotency key; invalid input
+      // cannot become valid on retry. A received job is already a durable receipt.
+      if (!update.jobId && !['generation_prompt_limit', 'mod_capability_input_invalid'].includes(error?.message)) return response(200, { ok: true, conversation: publicConversation(conversation) });
+      update = { ...update, status: 'failed', error: error instanceof Error ? error.message : 'Reply generation failed.', updatedAt: now() };
     }
     await serial(async () => {
       const conversations = await readConversations(); const index = conversations.findIndex((item) => item.id === conversationId);

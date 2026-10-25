@@ -1,7 +1,7 @@
 {
   "id": "burrow-theater",
   "name": "Theater",
-  "version": "2026.10.23",
+  "version": "2026.10.25",
   "server": "server/index.mjs",
   "ui": {
     "control": "ui/control.js",
@@ -12,7 +12,7 @@
       {
         "id": "profile",
         "navigation": {
-          "title": "Theater",
+          "title": "Operator profile",
           "description": "Choose how Theater roles know and address you."
         },
         "primary": {
@@ -24,7 +24,7 @@
       {
         "id": "roles",
         "navigation": {
-          "title": "Theater",
+          "title": "Roles",
           "description": "Manage SOUL roles for private, tool-free conversations."
         },
         "primary": {

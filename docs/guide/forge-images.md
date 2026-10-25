@@ -21,7 +21,7 @@ In a group, only roles with this setting enabled receive image-direction instruc
 
 Earlier development builds used a conversation-level switch. That old conversation setting is ignored by this version; existing roles without an explicit image setting default to off. Enable each intended role in Settings.
 
-Turning a role’s setting off prevents new recognized requests from that role on subsequent turns. It does not cancel image cards already queued or pending.
+Role edits, including this setting, are blocked while a referring conversation has pending text or image work. Once that work settles, turning the setting off prevents new recognized requests on subsequent turns; it is not a cancellation control.
 
 ## What happens next
 
@@ -42,4 +42,5 @@ This is a narrow, optional image-generation path supplied by the mod. Theater st
 Generated images are not fed back into the roles’ text context. An illustration is not a claim that the role inspected an image, used a shell, or performed a real-world action.
 
 A malformed image directive can remain visible as reply text instead of generating an image. A terminal failed image has no dedicated retry button in this snapshot. Transient reconciliation errors may leave a card pending for another check.
+
 

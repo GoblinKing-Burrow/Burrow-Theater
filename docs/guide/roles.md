@@ -29,7 +29,7 @@ This is an example identity, not a required schema. Theater adds its own fiction
 
 Select it under **Saved roles**, change its name or SOUL, and choose **Save role**.
 
-Roles are reused by conversations. Future turns use the current saved SOUL; editing it does not rewrite old transcript messages. Avoid editing a participating role while a reply is being generated: Theater rejects a turn if its role definitions changed during generation.
+Roles are reused by conversations. Future turns use the current saved SOUL; editing it does not rewrite old transcript messages. Theater blocks role edits while any conversation using that role has pending text or Forge image work. Wait for that work to settle; the submitted turn uses its saved role snapshot.
 
 The image setting is off by default and follows the role across its conversations. In groups, each role keeps its own image permission. See [Forge images](forge-images.md).
 
@@ -45,4 +45,5 @@ The delete button asks for confirmation. A role still referenced by any active o
 - The current editor does not provide avatar upload, character-card import, or a separate scenario editor.
 
 A longer SOUL also makes every generated turn larger. Start with the details the character actually needs.
+
 

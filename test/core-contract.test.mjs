@@ -28,13 +28,16 @@ test('current Burrow Core discovers and hosts Burrow Theater with durable model 
   assert.equal(mod.id, 'burrow-theater'); assert.equal(mod.name, 'Theater'); assert.notEqual(mod.status, 'failed', mod.error);
   assert.deepEqual(Object.keys(mod.ui), ['control', 'settings']);
   assert.deepEqual(mod.contributions.settings.map(item => item.id), ['profile', 'roles']);
+  assert.deepEqual(mod.contributions.settings.map(item => item.navigation.title), ['Operator profile', 'Roles']);
   assert.equal(mod.contributions.settings[0].primary.capability, 'settingsUi');
   assert.equal(mod.contributions.settings[1].primary.capability, 'settingsUi');
 
+  const { canonicalGenerationInput } = await import(pathToFileURL(path.join(coreRoot, 'src/mod-capabilities.mjs')));
   const generations = [], jobs = new Map(), forgeCalls = [];
   const host = startModHost({ mod, store: await memoryStore(), logger: { debug() {}, info() {}, warn() {}, error() {} }, capabilities: {
     listModels: async () => [{ connectionId: 'local', model: 'stheno', provider: 'ollama', reasoningEfforts: ['low', 'high'], supportsTemperature: true }],
     submitGeneration: async input => {
+      canonicalGenerationInput(input);
       generations.push(input);
       const existing = [...jobs.values()].find(job => job.idempotencyKey === input.idempotencyKey);
       if (existing) return { job: existing, replayed: true };

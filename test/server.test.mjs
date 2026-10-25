@@ -346,3 +346,53 @@ test('overlapping Forge reconciles cannot regress a terminal image when completi
   assert.equal(f.settings.get('conversations')[0].messages[0].status, 'completed');
   assert.equal(f.settings.get('conversations')[0].messages[0].previewUrl, '/preview.png');
 });
+
+test('oversized assembled prompt rejects a new turn without persisting a lock or transcript change', async () => {
+  const f = fixture(); await activate(f.context); const created = await createConversation(f); const id = created.body.conversation.id;
+  const stored = f.settings.get('conversations');
+  stored[0].messages = Array.from({length: 5}, (_, i) => ({id: `large-${i}`, role: 'user', content: 'x'.repeat(24000)}));
+  f.settings.set('conversations', stored);
+  const before = structuredClone(stored);
+  const result = await f.routes.get('POST /conversations/:id/turn')(req({content: 'Hello'}, {id}));
+  assert.equal(result.status, 413); assert.equal(result.body.error, 'generation_prompt_limit');
+  assert.deepEqual(f.settings.get('conversations'), before); assert.equal(f.generationJobs.size, 0);
+  assert.equal((await f.routes.get('DELETE /conversations/:id')(req({}, {id}))).status, 200);
+});
+
+test('legacy oversized pending prompt settles failed and unlocks role edits and conversation deletion', async () => {
+  const f = fixture(); await activate(f.context); const created = await createConversation(f); const id = created.body.conversation.id;
+  await f.routes.get('POST /conversations/:id/turn')(req({content: 'Hello'}, {id}));
+  const stored = f.settings.get('conversations'); stored[0].messages.at(-1).generationRequest.prompt = 'x'.repeat(100001); f.settings.set('conversations', stored);
+  const result = await reconcileGeneration(f, id); assert.equal(result.body.conversation.messages.at(-1).status, 'failed');
+  assert.equal(result.body.conversation.messages.at(-1).error, 'generation_prompt_limit'); assert.equal(f.generationJobs.size, 0);
+  assert.equal((await f.routes.get('PUT /roles/:id')(req({name:'Updated'}, {id:'house-goblin'}))).status, 200);
+  assert.equal((await f.routes.get('DELETE /conversations/:id')(req({}, {id}))).status, 200);
+});
+
+test('deterministic admission rejection settles while ambiguous failure retries identical idempotency key', async () => {
+  const f = fixture(); await activate(f.context); const created = await createConversation(f); const id = created.body.conversation.id;
+  await f.routes.get('POST /conversations/:id/turn')(req({content: 'Hello'}, {id}));
+  const submit = f.context.models.generations.submit, keys = [];
+  f.context.models.generations.submit = async input => { keys.push(input.idempotencyKey); throw Error('connection_lost'); };
+  const retry = await reconcileGeneration(f,id); assert.equal(retry.body.conversation.messages.at(-1).status, 'pending');
+  f.context.models.generations.submit = async input => { keys.push(input.idempotencyKey); return submit(input); };
+  const done = await reconcileGeneration(f,id); assert.equal(done.body.conversation.messages.at(-1).content, '*The curtain rises.* Welcome.'); assert.equal(keys[0],keys[1]);
+  await f.routes.get('POST /conversations/:id/turn')(req({content:'Again'},{id}));
+  f.context.models.generations.submit = async () => { throw Error('mod_capability_input_invalid'); };
+  const failed = await reconcileGeneration(f,id); assert.equal(failed.body.conversation.messages.at(-1).status,'failed');
+});
+
+test('later group prompt overflow settles atomically without publishing partial cast replies', async () => {
+  const f = await groupFixture(); const made = await groupCreate(f); const id = made.body.conversation.id;
+  await f.routes.get('POST /conversations/:id/turn')(req({content:'Hello'},{id}));
+  const stored = f.settings.get('conversations'); const pending = stored[0].messages.at(-1);
+  pending.turnSnapshot.roles[1].soul = 's'.repeat(48000);
+  stored[0].messages.unshift(...Array.from({length:3},(_,i)=>({id:`history-${i}`,role:'user',content:'h'.repeat(18000)})));
+  f.settings.set('conversations',stored);
+  const result = await reconcileGeneration(f,id);
+  assert.equal(result.body.conversation.messages.at(-1).status,'failed');
+  assert.equal(result.body.conversation.messages.at(-1).error,'generation_prompt_limit');
+  assert.equal(result.body.conversation.messages.filter(m=>m.role==='assistant'&&m.type!=='text_generation').length,0);
+  assert.equal(f.generationJobs.size,1);
+  assert.equal((await f.routes.get('DELETE /conversations/:id')(req({},{id}))).status,200);
+});

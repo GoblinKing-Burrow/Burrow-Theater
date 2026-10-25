@@ -19,25 +19,25 @@ function summary(soul) { const line = String(soul || '').split('\n').map((item) 
 export function mountSettings({ section, primary, overflow, api }) {
   if (section === 'profile') return mountProfileSettings({ primary, overflow, api });
   if (section !== 'roles') return;
-  const controller = new AbortController(); let mounted = true; let roles = []; let selectedId = ''; let loading = true; let busy = false; let feedback = ''; let failed = false; let forgeImages = { available: false, reason: 'Forge images are unavailable.' };
+  const controller = new AbortController(); let mounted = true; let roles = []; let selectedId = ''; let loading = true; let busy = false; let feedback = ''; let failed = false; let roleDraft = null; let forgeImages = { available: false, reason: 'Forge images are unavailable.' };
   const style = el('style', { text: styles }); const panel = el('section', { className: 'setting-section theater-role-settings', 'aria-labelledby': 'theater-roles-heading' }); const inventory = el('div', { className: 'theater-role-settings' });
   primary.replace([style, panel]); if (overflow) overflow.replace(inventory);
   const request = (path, init = {}) => api(path, { ...init, signal: controller.signal, headers: { ...(init.body ? { 'content-type': 'application/json' } : {}), ...(init.headers || {}) } });
   const selected = () => roles.find((item) => item.id === selectedId) || null;
-  const blank = () => { selectedId = ''; feedback = ''; failed = false; render(); };
+  const blank = () => { selectedId = ''; roleDraft = null; feedback = ''; failed = false; render(); };
   async function save(name, soul, allowForgeImages) {
-    const current = selected(); busy = true; feedback = 'Saving role…'; failed = false; render();
+    roleDraft = { name, soul, allowForgeImages }; const current = selected(); busy = true; feedback = 'Saving role…'; failed = false; render();
     try {
       const result = await request(current ? `/roles/${current.id}` : '/roles', { method: current ? 'PUT' : 'POST', body: JSON.stringify({ name, soul, allowForgeImages }) });
       if (!result?.role) throw new Error('invalid_role_response');
-      roles = current ? roles.map((item) => item.id === current.id ? result.role : item) : [...roles, result.role]; selectedId = result.role.id; feedback = `${result.role.name} saved.`;
+      roles = current ? roles.map((item) => item.id === current.id ? result.role : item) : [...roles, result.role]; selectedId = result.role.id; roleDraft = null; feedback = `${result.role.name} saved.`;
     } catch (error) { feedback = message(error); failed = true; }
     finally { busy = false; render(); }
   }
   async function remove(role) {
     if (!confirm(`Delete “${role.name}”? This cannot be undone.`)) return;
     busy = true; feedback = 'Deleting role…'; failed = false; render();
-    try { await request(`/roles/${role.id}`, { method: 'DELETE' }); roles = roles.filter((item) => item.id !== role.id); if (selectedId === role.id) selectedId = ''; feedback = `${role.name} deleted.`; }
+    try { await request(`/roles/${role.id}`, { method: 'DELETE' }); roles = roles.filter((item) => item.id !== role.id); if (selectedId === role.id) { selectedId = ''; roleDraft = null; } feedback = `${role.name} deleted.`; }
     catch (error) { feedback = message(error); failed = true; }
     finally { busy = false; render(); }
   }
@@ -46,7 +46,7 @@ export function mountSettings({ section, primary, overflow, api }) {
     if (loading) list.append(el('p', { className: 'theater-role-empty', text: 'Loading roles…' }));
     else if (!roles.length) list.append(el('p', { className: 'theater-role-empty', text: 'No SOUL roles yet.' }));
     else for (const role of roles) {
-      const choose = button('', 'theater-role-select'); choose.setAttribute('aria-pressed', role.id === selectedId ? 'true' : 'false'); choose.disabled = busy; choose.append(el('strong', { text: role.name }), el('small', { text: summary(role.soul) })); choose.onclick = () => { selectedId = role.id; feedback = ''; failed = false; render(); };
+      const choose = button('', 'theater-role-select'); choose.setAttribute('aria-pressed', role.id === selectedId ? 'true' : 'false'); choose.disabled = busy; choose.append(el('strong', { text: role.name }), el('small', { text: summary(role.soul) })); choose.onclick = () => { selectedId = role.id; roleDraft = null; feedback = ''; failed = false; render(); };
       const removeButton = button('×', 'theater-role-delete'); removeButton.setAttribute('aria-label', `Delete ${role.name}`); removeButton.disabled = busy; removeButton.onclick = () => remove(role);
       list.append(el('article', { className: `theater-role-card${role.id === selectedId ? ' active' : ''}` }, choose, removeButton));
     }
@@ -55,9 +55,9 @@ export function mountSettings({ section, primary, overflow, api }) {
   function render() {
     if (!mounted) return;
     const current = selected();
-    const name = el('input', { id: 'theater-role-name', name: 'name', type: 'text', required: '', maxlength: '120', autocomplete: 'off' }); name.value = current?.name || ''; name.disabled = busy;
-    const soul = el('textarea', { id: 'theater-role-soul', name: 'soul', required: '', maxlength: '48000', rows: '16', placeholder: '# SOUL\n\nWho this role is, how they speak, what they value, and the boundaries of the fiction.' }); soul.value = current?.soul || ''; soul.disabled = busy;
-    const forgeInput = el('input', { id: 'theater-role-forge-images', name: 'allowForgeImages', type: 'checkbox', 'aria-describedby': 'theater-role-forge-help' }); forgeInput.checked = current?.allowForgeImages === true; forgeInput.disabled = busy || forgeImages.available !== true; const forgeHelp = forgeImages.available === true ? 'Let this role optionally illustrate its own Theater replies.' : forgeImages.reason || 'Forge images are unavailable.';
+    const name = el('input', { id: 'theater-role-name', name: 'name', type: 'text', required: '', maxlength: '120', autocomplete: 'off' }); name.value = roleDraft?.name ?? current?.name ?? ''; name.disabled = busy;
+    const soul = el('textarea', { id: 'theater-role-soul', name: 'soul', required: '', maxlength: '48000', rows: '16', placeholder: '# SOUL\n\nWho this role is, how they speak, what they value, and the boundaries of the fiction.' }); soul.value = roleDraft?.soul ?? current?.soul ?? ''; soul.disabled = busy;
+    const forgeInput = el('input', { id: 'theater-role-forge-images', name: 'allowForgeImages', type: 'checkbox', 'aria-describedby': 'theater-role-forge-help' }); forgeInput.checked = (roleDraft ?? current)?.allowForgeImages === true; forgeInput.disabled = busy || forgeImages.available !== true; const forgeHelp = forgeImages.available === true ? 'Let this role optionally illustrate its own Theater replies.' : forgeImages.reason || 'Forge images are unavailable.';
     const create = button('New role', 'secondary'); create.disabled = busy; create.onclick = blank;
     const saveButton = el('button', { type: 'submit', className: 'primary', text: busy ? 'Saving…' : current ? 'Save role' : 'Create role' }); saveButton.disabled = busy;
     const form = el('form', { className: 'theater-role-form' }, el('label', { className: 'field', htmlFor: name.id }, document.createTextNode('Role name'), name), el('label', { className: 'field', htmlFor: soul.id }, document.createTextNode('SOUL'), soul, el('small', { className: 'settings-help', text: 'Use the same SOUL-style Markdown you use for a Burrow agent. Theater adds only the fictional boundary; it does not add tools or operational context.' })), el('label', { className: 'theater-forge-setting', htmlFor: forgeInput.id, title: forgeHelp }, forgeInput, el('span', {}, el('strong', { text: 'Allow Forge images' }), el('small', { id: 'theater-role-forge-help', text: forgeHelp }))), el('div', { className: 'theater-role-actions' }, el('p', { className: `theater-role-feedback${failed ? ' error' : ''}`, role: failed ? 'alert' : 'status', 'aria-live': 'polite', text: feedback }), el('div', {}, create, saveButton)));
