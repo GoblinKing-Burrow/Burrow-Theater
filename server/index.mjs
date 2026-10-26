@@ -45,14 +45,21 @@ function errorResponse(error, logger) {
 }
 function now() { return new Date().toISOString(); }
 function clone(value) { return structuredClone(value); }
+function validateAvatar(value) {
+  const avatar = text(value, 'avatar', 512000);
+  if (!avatar || (avatar.length <= 16 && !/[<>:/]/.test(avatar))) return avatar;
+  if (/^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+={0,2}$/.test(avatar)) return avatar;
+  fail('avatar_invalid');
+}
 function validateRole(body, existing = {}) {
-  if (!plain(body) || Object.keys(body).some((key) => !['name', 'soul', 'allowForgeImages'].includes(key))) fail('role_invalid');
+  if (!plain(body) || Object.keys(body).some((key) => !['name', 'soul', 'allowForgeImages', 'avatar'].includes(key))) fail('role_invalid');
   const allowForgeImages = body.allowForgeImages === undefined ? existing.allowForgeImages === true : body.allowForgeImages;
   if (typeof allowForgeImages !== 'boolean') fail('allow_forge_images_invalid');
   return {
     name: text(body.name ?? existing.name, 'name', MAX.name, { required: true }),
     soul: text(body.soul ?? existing.soul, 'soul', MAX.soul, { required: true }),
-    allowForgeImages
+    allowForgeImages,
+    avatar: validateAvatar(body.avatar === undefined ? existing.avatar : body.avatar)
   };
 }
 function normalizeRole(role) { return { ...role, allowForgeImages: role.allowForgeImages === true }; }
@@ -74,10 +81,11 @@ function workPending(conversation) {
   return conversation.messages.some((message) => ['text_generation', 'forge_image'].includes(message.type) && message.status === 'pending');
 }
 function validateOperatorProfile(body, existing = {}) {
-  if (!plain(body) || Object.keys(body).some((key) => !['name', 'profile'].includes(key))) fail('operator_profile_invalid');
+  if (!plain(body) || Object.keys(body).some((key) => !['name', 'profile', 'avatar'].includes(key))) fail('operator_profile_invalid');
   return {
     name: text(body.name ?? existing.name, 'operator_name', MAX.name, { required: true }),
-    profile: text(body.profile ?? existing.profile, 'operator_profile', MAX.profile)
+    profile: text(body.profile ?? existing.profile, 'operator_profile', MAX.profile),
+    avatar: validateAvatar(body.avatar === undefined ? existing.avatar : body.avatar)
   };
 }
 function fallbackTitle(roles, timestamp) {
@@ -193,7 +201,7 @@ export async function activate(context) {
     if (plain(stored)) {
       try { return validateOperatorProfile(stored); } catch { /* Invalid legacy state falls back without bricking Theater. */ }
     }
-    return { name: await coreOperatorIdentity(), profile: '' };
+    return { name: await coreOperatorIdentity(), profile: '', avatar: '' };
   };
   const route = (handler) => async (request) => { try { requireOperator(request); return await handler(request); } catch (error) { return errorResponse(error, context.logger); } };
   const validateSelection = async (values, body = {}, existing = {}) => {
@@ -212,7 +220,7 @@ export async function activate(context) {
 
   context.api.get('/bootstrap', route(async () => {
     const operatorProfile = await readOperatorProfile();
-    const operator = { name: operatorProfile.name, avatar: '' };
+    const operator = { name: operatorProfile.name, avatar: operatorProfile.avatar };
     let forgeImages = { available: false, reason: 'Forge images are unavailable.' };
     try { forgeImages = await context.forge.images.status(); } catch { /* Optional capability: Theater remains usable without it. */ }
     return response(200, { ok: true, boundary: FICTION_BOUNDARY, operator, operatorProfile, forgeImages, models: await context.models.list(), roles: await readRoles(), conversations: (await readConversations()).map(publicConversation) });
@@ -226,7 +234,7 @@ export async function activate(context) {
 
   context.api.post('/roles', route(async ({ body }) => serial(async () => {
     const timestamp = now();
-    const role = { id: randomUUID(), ...validateRole(body), avatar: '', createdAt: timestamp, updatedAt: timestamp };
+    const role = { id: randomUUID(), ...validateRole(body), createdAt: timestamp, updatedAt: timestamp };
     const roles = await readRoles(); roles.push(role); await saveRoles(roles);
     return response(201, { ok: true, role });
   })));

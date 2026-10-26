@@ -48,7 +48,7 @@ The role is protected while any active or archived conversation references it. S
 
 ## Features not present in this snapshot
 
-There is no conversation file export, branching, regenerate button, message editing, or character-avatar editor. **Copy message** and **Copy conversation** provide clipboard text; images and generation-status cards are not included. The current UI creates a cast for a new group; it does not offer a participant editor for an existing conversation.
+There is no conversation file export, branching, regenerate button, or message editing. **Copy message** and **Copy conversation** provide clipboard text; images and generation-status cards are not included. The current UI creates a cast for a new group; it does not offer a participant editor for an existing conversation.
 
 ## Data handling
 
@@ -56,5 +56,8 @@ Roles, conversations and the Theater-specific operator profile live in Theaterâ€
 
 Selected providers receive conversation text for generation. Forge receives requested image prompts. Treat model/provider selection and access to the Burrow installation as part of your data-handling decision.
 
+## An avatar will not save
 
+Wait for **Processing imageâ€¦** to finish and then save the role/profile; selecting an image only changes the preview. The browser rejects non-image files, unreadable images and source files over 50,000,000 bytes. It shrinks/optimizes accepted images to fit the saved 512,000-character data-URL limit. Try a smaller ordinary image if processing fails.
 
+The API accepts an empty avatar, short plain-text fallback (up to 16 UTF-16 units, excluding `<`, `>`, `:`, `/`), or a base64 PNG/JPEG/WebP/GIF image data URL within that limit. External URLs and SVG data URLs are not accepted. Omitting `avatar` on an edit preserves it; an empty string clears it. Role edits remain blocked while a referring conversation has pending text or Forge image work. These are avatars, not character-card imports.

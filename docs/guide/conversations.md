@@ -8,6 +8,8 @@ Switching roles or conversations clears an unsent composer draft. Send or copy i
 
 Use **Rename**, **Archive**, and **Delete** beside the conversation selector to manage a transcript. Archived conversations remain available in the selector and are clearly marked; Theater never silently expires them. Choose **Restore** before sending another message in an archived conversation. Delete opens **Delete conversation?**; choose **Cancel** to keep it or **Delete conversation** to permanently remove it. Escape cancels the dialog. Lifecycle actions are disabled while text or Forge image work is pending. New conversations receive a cast-and-time fallback title; the first submitted message supplies an automatic title unless you have named the conversation yourself.
 
+While this Theater view remains open, it remembers each conversation’s scroll position. Updates preserve your position when reading older messages; near the bottom, the view follows new content and loaded images. Sending a message moves to the newest content, but scrolling up afterward stops following the eventual response. These positions are view-local, not saved across a reload.
+
 ## Choose a model
 
 The toolbar exposes **Provider**, **Model**, **Effort**, and **Temp**.
@@ -34,6 +36,8 @@ A group therefore makes one text-generation request per role per turn. A larger 
 ## Theater operator profile
 
 Open **Settings → Theater → Operator profile** to choose the preferred name and optional Markdown/context that Theater roles receive about you. This profile is Theater-specific: it does not change your normal Burrow identity or any agent profile. Your preferred name is also used to attribute your Theater messages. The name is required (up to 120 characters); profile/context is optional (up to 24,000). The profile is copied into the submitted turn’s snapshot, so edits do not rewrite an already pending turn.
+
+The same Settings page has an **Avatar** control: **Change** or paste an image into it, wait for processing, then **Save profile**. Use **Remove** and save to restore the fallback initial. This avatar appears on your Theater messages; it is display data and is not supplied as image input to the text model. See [avatar limits](roles.md#choose-or-remove-an-avatar).
 
 ## What each role receives
 
@@ -67,3 +71,4 @@ At the start of the composer (with no text selection), **Arrow Up** recalls your
 ## Assembled prompt limit
 
 Theater limits each assembled role prompt—SOUL, operator profile, fiction/cast instructions and accumulated text—to **100,000 UTF-16 code units**, not tokens. If the first prompt is too large, submission is rejected before saving your message or a pending card. A later group-role prompt can exceed the limit after earlier replies: the accepted turn then fails without publishing partial cast replies. Shorten the SOUL/profile or start a fresh session; there is no automatic compaction. See [troubleshooting](troubleshooting.md#conversation-limits).
+

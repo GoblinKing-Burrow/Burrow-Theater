@@ -1,17 +1,71 @@
 export const settingsSections = [{ id: 'profile', label: 'Operator profile' }, { id: 'roles', label: 'Roles' }];
 
 const styles = `
+.theater-avatar-editor{display:flex;align-items:center;gap:12px;min-width:0}.theater-avatar-preview{display:grid;place-items:center;width:72px;height:72px;flex:0 0 72px;overflow:hidden;border:1px solid var(--line);border-radius:10px;background:var(--surface-input);font-size:28px;font-weight:800}.theater-avatar-preview img{width:100%;height:100%;object-fit:cover}.theater-avatar-controls{display:grid;gap:6px;min-width:0}.theater-avatar-controls>div{display:flex;gap:8px}.theater-avatar-controls p:empty{display:none}
+
 .theater-role-settings,.theater-profile-settings{display:grid;gap:14px}.theater-role-settings *,.theater-profile-settings *{box-sizing:border-box}.theater-role-settings textarea,.theater-profile-settings textarea{width:100%;min-height:320px;padding:10px;border:1px solid var(--line);border-radius:6px;resize:vertical;background:var(--surface-input);color:var(--text);font:inherit;line-height:1.5}.theater-role-settings textarea:focus,.theater-role-settings input:focus,.theater-profile-settings textarea:focus,.theater-profile-settings input:focus{border-color:var(--accent);outline:0;box-shadow:0 0 0 3px var(--accent-subtle)}.theater-role-settings input:not([type=checkbox]),.theater-profile-settings input:not([type=checkbox]){width:100%;min-height:34px;padding:0 9px;border:1px solid var(--line);border-radius:6px;background:var(--surface-input);color:var(--text);font:inherit}.theater-role-form,.theater-profile-form{display:grid;gap:10px}.theater-forge-setting{display:flex;align-items:flex-start;gap:10px;padding:11px 12px;border:1px solid var(--line);border-radius:7px;background:var(--panel)}.theater-forge-setting input{flex:0 0 auto;margin-top:3px;accent-color:var(--accent)}.theater-forge-setting span{display:grid;gap:2px}.theater-forge-setting strong{color:var(--text-strong)}.theater-forge-setting small{color:var(--muted)}.theater-role-actions{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:14px;padding-top:14px;border-top:1px solid var(--line-soft)}.theater-role-actions>div{display:flex;gap:7px}.theater-role-feedback{margin:0;color:var(--muted);font-size:12px}.theater-role-feedback.error{color:var(--danger)}.theater-role-list{display:grid;gap:8px}.theater-role-card{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border:1px solid var(--line);border-radius:7px;background:var(--panel)}.theater-role-card.active{border-color:var(--accent-border);background:var(--accent-subtle)}.theater-role-select{display:block;min-width:0;flex:1;padding:0;border:0;background:transparent;color:inherit;text-align:left;cursor:pointer;font:inherit}.theater-role-select strong,.theater-role-select small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.theater-role-select small{margin-top:3px;color:var(--muted);font-size:11px}.theater-role-delete{display:grid;width:28px;height:28px;flex:0 0 auto;place-items:center;padding:0;border:0;border-radius:5px;background:transparent;color:var(--muted);font-size:20px;cursor:pointer}.theater-role-delete:hover{background:var(--danger-hover);color:var(--danger)}.theater-role-empty{display:grid;min-height:100px;place-items:center;margin:0;color:var(--muted);text-align:center}@media(max-width:620px){.theater-role-settings textarea,.theater-profile-settings textarea{min-height:250px}.theater-role-actions{align-items:stretch;flex-direction:column}.theater-role-actions>div{display:grid;grid-template-columns:1fr 1fr}.theater-role-actions button{width:100%}}
 `;
 function el(tag, attrs = {}, ...children) { const node = document.createElement(tag); for (const [name, value] of Object.entries(attrs)) { if (name === 'className') node.className = value; else if (name === 'text') node.textContent = value; else if (name === 'htmlFor') node.htmlFor = value; else node.setAttribute(name, value); } node.append(...children); return node; }
 function button(label, className = '') { return el('button', { type: 'button', className, text: label }); }
+export async function optimizeAvatar(file) {
+  if (!file.type.startsWith('image/')) throw new Error('Choose or paste an image file.');
+  if (file.size > 50000000) throw new Error('Avatar image exceeds 50 MB.');
+  const source = await new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file), image = new Image();
+    image.onload = () => { URL.revokeObjectURL(url); resolve(image); };
+    image.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not read the avatar image.')); };
+    image.src = url;
+  });
+  const scale = Math.min(1, 512 / Math.max(source.naturalWidth, source.naturalHeight));
+  const canvas = document.createElement('canvas');
+  let width = Math.max(1, Math.round(source.naturalWidth * scale)), height = Math.max(1, Math.round(source.naturalHeight * scale));
+  for (let attempt = 0; attempt < 6; attempt++) {
+    canvas.width = width; canvas.height = height;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Could not process the avatar image.');
+    context.drawImage(source, 0, 0, width, height);
+    for (const quality of [0.86, 0.72, 0.58]) {
+      const avatar = canvas.toDataURL('image/webp', quality);
+      if (avatar.length <= 512000) return avatar;
+    }
+    width = Math.max(1, Math.round(width * 0.75)); height = Math.max(1, Math.round(height * 0.75));
+  }
+  throw new Error('Could not optimize the avatar image enough to save it.');
+}
+function avatarEditor(value, name, disabled) {
+  let avatar = value || '', processing = false, revision = 0;
+  const root = el('div', { className: 'theater-avatar-editor' });
+  const preview = el('div', { className: 'theater-avatar-preview', 'aria-label': 'Avatar preview' });
+  const input = el('input', { type: 'file', accept: 'image/*', 'aria-label': 'Choose avatar image' }); input.hidden = true; input.disabled = disabled;
+  const choose = button('Change', 'secondary'), remove = button('Remove', 'secondary');
+  const status = el('p', { className: 'theater-role-feedback', role: 'status', 'aria-live': 'polite' });
+  function refresh() {
+    preview.replaceChildren();
+    if (avatar.startsWith('data:image/')) preview.append(el('img', { src: avatar, alt: '' }));
+    else preview.textContent = avatar || name.trim().slice(0, 1).toUpperCase() || '?';
+    choose.disabled = disabled || processing; remove.disabled = disabled || processing || !avatar;
+  }
+  async function pick(file) {
+    if (!file || disabled || processing) return;
+    const ticket = ++revision; processing = true; status.textContent = 'Processing image…'; refresh();
+    try { const next = await optimizeAvatar(file); if (ticket === revision) { avatar = next; status.textContent = ''; } }
+    catch (error) { if (ticket === revision) status.textContent = error.message; }
+    finally { if (ticket === revision) { processing = false; refresh(); } }
+  }
+  choose.onclick = () => input.click();
+  remove.onclick = () => { revision++; avatar = ''; status.textContent = ''; refresh(); };
+  input.onchange = () => { void pick(input.files?.[0]); input.value = ''; };
+  root.onpaste = event => { const image = [...(event.clipboardData?.files || [])].find(file => file.type.startsWith('image/')); if (image) { event.preventDefault(); void pick(image); } };
+  root.append(preview, el('div', { className: 'theater-avatar-controls' }, el('span', { text: 'Avatar' }), el('div', {}, choose, remove), input, status)); refresh();
+  return { root, value: () => avatar, ready: () => !processing };
+}
 function message(error) { const code = error instanceof Error ? error.message : ''; const known = { role_in_use: 'This role still has conversations. Delete those conversations before deleting the role.', role_not_found: 'That role no longer exists.' }; return known[code] || (code ? code.replaceAll('_', ' ') : 'The role could not be saved.'); }
 function mountProfileSettings({ primary, overflow, api }) {
-  const controller = new AbortController(); let mounted = true; let profile = { name: '', profile: '' }; let busy = false; let feedback = ''; let failed = false;
+  const controller = new AbortController(); let mounted = true; let profile = { name: '', profile: '', avatar: '' }; let busy = false; let loading = true; let feedback = ''; let failed = false;
   const style = el('style', { text: styles }); const panel = el('section', { className: 'setting-section theater-profile-settings', 'aria-labelledby': 'theater-profile-heading' }); primary.replace([style, panel]); if (overflow) overflow.replace([]);
   const request = (path, init = {}) => api(path, { ...init, signal: controller.signal, headers: { ...(init.body ? { 'content-type': 'application/json' } : {}), ...(init.headers || {}) } });
-  function render() { if (!mounted) return; const name = el('input', { id: 'theater-operator-name', name: 'name', type: 'text', required: '', maxlength: '120', autocomplete: 'nickname' }); name.value = profile.name; name.disabled = busy; const context = el('textarea', { id: 'theater-operator-profile', name: 'profile', maxlength: '24000', rows: '14', placeholder: '# About me\n\nContext Theater roles should know about me during fictional conversations.' }); context.value = profile.profile; context.disabled = busy; const save = el('button', { type: 'submit', className: 'primary', text: busy ? 'Saving…' : 'Save profile' }); save.disabled = busy; const form = el('form', { className: 'theater-profile-form' }, el('label', { className: 'field', htmlFor: name.id }, document.createTextNode('Preferred name'), name, el('small', { className: 'settings-help', text: 'Used for your attribution and in role prompts inside Theater only.' })), el('label', { className: 'field', htmlFor: context.id }, document.createTextNode('Profile and context'), context, el('small', { className: 'settings-help', text: 'Optional Markdown about your character, preferences, relationships, or scene context. This is separate from your normal Burrow identity and agent profiles.' })), el('div', { className: 'theater-role-actions' }, el('p', { className: `theater-role-feedback${failed ? ' error' : ''}`, role: failed ? 'alert' : 'status', 'aria-live': 'polite', text: feedback }), el('div', {}, save))); form.onsubmit = async event => { event.preventDefault(); if (!form.reportValidity()) return; busy = true; failed = false; feedback = 'Saving profile…'; render(); try { const result = await request('/operator-profile', { method: 'PUT', body: JSON.stringify({ name: name.value.trim(), profile: context.value.trim() }) }); if (!result?.operatorProfile) throw new Error('invalid_operator_profile_response'); profile = result.operatorProfile; feedback = 'Theater operator profile saved.'; } catch (error) { feedback = message(error); failed = true; } finally { busy = false; render(); } }; panel.replaceChildren(el('h2', { id: 'theater-profile-heading', text: 'Theater operator profile' }), el('p', { className: 'settings-description', text: 'Choose how Theater roles know and address you. This profile belongs only to Theater and does not change your normal Burrow identity.' }), form); }
-  async function load() { render(); try { const result = await request('/bootstrap'); if (!result?.operatorProfile) throw new Error('invalid_bootstrap_response'); profile = result.operatorProfile; } catch (error) { if (!controller.signal.aborted) { feedback = message(error); failed = true; } } finally { render(); } }
+  function render() { if (!mounted) return; const name = el('input', { id: 'theater-operator-name', name: 'name', type: 'text', required: '', maxlength: '120', autocomplete: 'nickname' }); name.value = profile.name; name.disabled = busy || loading; const context = el('textarea', { id: 'theater-operator-profile', name: 'profile', maxlength: '24000', rows: '14', placeholder: '# About me\n\nContext Theater roles should know about me during fictional conversations.' }); context.value = profile.profile; context.disabled = busy || loading; const avatar = avatarEditor(profile.avatar, profile.name, busy || loading); const save = el('button', { type: 'submit', className: 'primary', text: busy ? 'Saving…' : 'Save profile' }); save.disabled = busy || loading; const form = el('form', { className: 'theater-profile-form' }, avatar.root, el('label', { className: 'field', htmlFor: name.id }, document.createTextNode('Preferred name'), name, el('small', { className: 'settings-help', text: 'Used for your attribution and in role prompts inside Theater only.' })), el('label', { className: 'field', htmlFor: context.id }, document.createTextNode('Profile and context'), context, el('small', { className: 'settings-help', text: 'Optional Markdown about your character, preferences, relationships, or scene context. This is separate from your normal Burrow identity and agent profiles.' })), el('div', { className: 'theater-role-actions' }, el('p', { className: `theater-role-feedback${failed ? ' error' : ''}`, role: failed ? 'alert' : 'status', 'aria-live': 'polite', text: feedback }), el('div', {}, save))); form.onsubmit = async event => { event.preventDefault(); if (!form.reportValidity() || !avatar.ready()) return; profile = { name: name.value, profile: context.value, avatar: avatar.value() }; busy = true; failed = false; feedback = 'Saving profile…'; render(); try { const result = await request('/operator-profile', { method: 'PUT', body: JSON.stringify({ name: name.value.trim(), profile: context.value.trim(), avatar: avatar.value() }) }); if (!result?.operatorProfile) throw new Error('invalid_operator_profile_response'); profile = result.operatorProfile; feedback = 'Theater operator profile saved.'; } catch (error) { feedback = message(error); failed = true; } finally { busy = false; render(); } }; panel.replaceChildren(el('h2', { id: 'theater-profile-heading', text: 'Theater operator profile' }), el('p', { className: 'settings-description', text: 'Choose how Theater roles know and address you. This profile belongs only to Theater and does not change your normal Burrow identity.' }), form); }
+  async function load() { render(); try { const result = await request('/bootstrap'); if (!result?.operatorProfile) throw new Error('invalid_bootstrap_response'); profile = result.operatorProfile; } catch (error) { if (!controller.signal.aborted) { feedback = message(error); failed = true; } } finally { loading = false; render(); } }
   void load(); return () => { mounted = false; controller.abort(); panel.remove(); style.remove(); };
 }
 function summary(soul) { const line = String(soul || '').split('\n').map((item) => item.trim()).find((item) => item && !item.startsWith('#')); return line || 'SOUL role'; }
@@ -25,10 +79,10 @@ export function mountSettings({ section, primary, overflow, api }) {
   const request = (path, init = {}) => api(path, { ...init, signal: controller.signal, headers: { ...(init.body ? { 'content-type': 'application/json' } : {}), ...(init.headers || {}) } });
   const selected = () => roles.find((item) => item.id === selectedId) || null;
   const blank = () => { selectedId = ''; roleDraft = null; feedback = ''; failed = false; render(); };
-  async function save(name, soul, allowForgeImages) {
-    roleDraft = { name, soul, allowForgeImages }; const current = selected(); busy = true; feedback = 'Saving role…'; failed = false; render();
+  async function save(name, soul, allowForgeImages, avatar) {
+    roleDraft = { name, soul, allowForgeImages, avatar }; const current = selected(); busy = true; feedback = 'Saving role…'; failed = false; render();
     try {
-      const result = await request(current ? `/roles/${current.id}` : '/roles', { method: current ? 'PUT' : 'POST', body: JSON.stringify({ name, soul, allowForgeImages }) });
+      const result = await request(current ? `/roles/${current.id}` : '/roles', { method: current ? 'PUT' : 'POST', body: JSON.stringify({ name, soul, allowForgeImages, avatar }) });
       if (!result?.role) throw new Error('invalid_role_response');
       roles = current ? roles.map((item) => item.id === current.id ? result.role : item) : [...roles, result.role]; selectedId = result.role.id; roleDraft = null; feedback = `${result.role.name} saved.`;
     } catch (error) { feedback = message(error); failed = true; }
@@ -58,10 +112,11 @@ export function mountSettings({ section, primary, overflow, api }) {
     const name = el('input', { id: 'theater-role-name', name: 'name', type: 'text', required: '', maxlength: '120', autocomplete: 'off' }); name.value = roleDraft?.name ?? current?.name ?? ''; name.disabled = busy;
     const soul = el('textarea', { id: 'theater-role-soul', name: 'soul', required: '', maxlength: '48000', rows: '16', placeholder: '# SOUL\n\nWho this role is, how they speak, what they value, and the boundaries of the fiction.' }); soul.value = roleDraft?.soul ?? current?.soul ?? ''; soul.disabled = busy;
     const forgeInput = el('input', { id: 'theater-role-forge-images', name: 'allowForgeImages', type: 'checkbox', 'aria-describedby': 'theater-role-forge-help' }); forgeInput.checked = (roleDraft ?? current)?.allowForgeImages === true; forgeInput.disabled = busy || forgeImages.available !== true; const forgeHelp = forgeImages.available === true ? 'Let this role optionally illustrate its own Theater replies.' : forgeImages.reason || 'Forge images are unavailable.';
+    const avatar = avatarEditor((roleDraft ?? current)?.avatar, name.value, busy || loading);
     const create = button('New role', 'secondary'); create.disabled = busy; create.onclick = blank;
-    const saveButton = el('button', { type: 'submit', className: 'primary', text: busy ? 'Saving…' : current ? 'Save role' : 'Create role' }); saveButton.disabled = busy;
-    const form = el('form', { className: 'theater-role-form' }, el('label', { className: 'field', htmlFor: name.id }, document.createTextNode('Role name'), name), el('label', { className: 'field', htmlFor: soul.id }, document.createTextNode('SOUL'), soul, el('small', { className: 'settings-help', text: 'Use the same SOUL-style Markdown you use for a Burrow agent. Theater adds only the fictional boundary; it does not add tools or operational context.' })), el('label', { className: 'theater-forge-setting', htmlFor: forgeInput.id, title: forgeHelp }, forgeInput, el('span', {}, el('strong', { text: 'Allow Forge images' }), el('small', { id: 'theater-role-forge-help', text: forgeHelp }))), el('div', { className: 'theater-role-actions' }, el('p', { className: `theater-role-feedback${failed ? ' error' : ''}`, role: failed ? 'alert' : 'status', 'aria-live': 'polite', text: feedback }), el('div', {}, create, saveButton)));
-    form.onsubmit = (event) => { event.preventDefault(); if (!form.reportValidity()) return; void save(name.value.trim(), soul.value.trim(), forgeInput.checked); };
+    const saveButton = el('button', { type: 'submit', className: 'primary', text: busy ? 'Saving…' : current ? 'Save role' : 'Create role' }); saveButton.disabled = busy || loading;
+    const form = el('form', { className: 'theater-role-form' }, avatar.root, el('label', { className: 'field', htmlFor: name.id }, document.createTextNode('Role name'), name), el('label', { className: 'field', htmlFor: soul.id }, document.createTextNode('SOUL'), soul, el('small', { className: 'settings-help', text: 'Use the same SOUL-style Markdown you use for a Burrow agent. Theater adds only the fictional boundary; it does not add tools or operational context.' })), el('label', { className: 'theater-forge-setting', htmlFor: forgeInput.id, title: forgeHelp }, forgeInput, el('span', {}, el('strong', { text: 'Allow Forge images' }), el('small', { id: 'theater-role-forge-help', text: forgeHelp }))), el('div', { className: 'theater-role-actions' }, el('p', { className: `theater-role-feedback${failed ? ' error' : ''}`, role: failed ? 'alert' : 'status', 'aria-live': 'polite', text: feedback }), el('div', {}, create, saveButton)));
+    form.onsubmit = (event) => { event.preventDefault(); if (!form.reportValidity() || !avatar.ready()) return; void save(name.value.trim(), soul.value.trim(), forgeInput.checked, avatar.value()); };
     panel.replaceChildren(el('h2', { id: 'theater-roles-heading', text: current ? `Edit ${current.name}` : 'New role' }), el('p', { className: 'settings-description', text: 'A Theater role is a name and a SOUL. Conversations use this identity without Burrow tools, workspace context, or operational instructions.' }), form);
     renderInventory();
   }

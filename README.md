@@ -19,7 +19,8 @@ The role is defined with the same SOUL-style Markdown used by Burrow agents. The
 ## Current experience
 
 - Familiar Burrow-style chat and composer
-- Reusable SOUL roles and a Theater-specific operator profile managed through Burrow Settings
+- Reusable SOUL roles and a Theater-specific operator profile managed through Burrow Settings, with locally optimized avatar images
+- View-local conversation scroll positions that preserve reading older messages during updates
 - Rename, archive/restore and permanently delete conversations when no work is pending
 - Optional Forge images enabled independently for each role when Core has an image model available
 - Configured model selection, including local text-only models
@@ -59,4 +60,5 @@ profile/SOUL context. Existing oversized pending turns settle as failed on
 reconciliation, unlocking conversation deletion and role edits. A later
 cast member's oversized prompt fails the group turn without publishing partial
 replies. Ambiguous admission failures retain the same idempotency key for retry.
+
 

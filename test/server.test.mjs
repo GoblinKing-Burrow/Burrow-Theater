@@ -41,7 +41,7 @@ test('activation exposes only SOUL role and conversation routes with no agent to
 
 test('bootstrap returns configured models, operator identity, default SOUL role, and conversations', async () => {
   const f = fixture(); await activate(f.context); const result = await f.routes.get('GET /bootstrap')(req());
-  assert.equal(result.status, 200); assert.deepEqual(result.body.models, f.models); assert.equal(result.body.operator.name, 'Rob'); assert.deepEqual(result.body.operatorProfile, { name: 'Rob', profile: '' });
+  assert.equal(result.status, 200); assert.deepEqual(result.body.models, f.models); assert.equal(result.body.operator.name, 'Rob'); assert.deepEqual(result.body.operatorProfile, { name: 'Rob', profile: '', avatar: '' });
   assert.equal(result.body.roles[0].name, 'The House Goblin'); assert.match(result.body.roles[0].soul, /# SOUL/); assert.equal(result.body.roles[0].allowForgeImages, false); assert.deepEqual(result.body.conversations, []);
 });
 
@@ -55,7 +55,7 @@ test('auth context protects Theater state when Burrow authentication is enabled'
 test('Theater operator profile persists separately and is injected into current single and group turns', async () => {
   const f = await groupFixture();
   const saved = await f.routes.get('PUT /operator-profile')(req({ name: 'Goblin King', profile: '# Player\nBuilder of strange kingdoms.' }));
-  assert.equal(saved.status, 200); assert.deepEqual(saved.body.operatorProfile, { name: 'Goblin King', profile: '# Player\nBuilder of strange kingdoms.' });
+  assert.equal(saved.status, 200); assert.deepEqual(saved.body.operatorProfile, { name: 'Goblin King', profile: '# Player\nBuilder of strange kingdoms.', avatar: '' });
   assert.deepEqual(f.settings.get('operatorProfile'), saved.body.operatorProfile);
   const created = await groupCreate(f); await completeTurn(f, created.body.conversation.id, 'Open the gates.');
   assert.match(f.generations[0].prompt, /# Player\nName: Goblin King/); assert.match(f.generations[0].prompt, /Builder of strange kingdoms/); assert.match(f.generations[0].prompt, /Goblin King:\nOpen the gates/);
@@ -395,4 +395,24 @@ test('later group prompt overflow settles atomically without publishing partial 
   assert.equal(result.body.conversation.messages.filter(m=>m.role==='assistant'&&m.type!=='text_generation').length,0);
   assert.equal(f.generationJobs.size,1);
   assert.equal((await f.routes.get('DELETE /conversations/:id')(req({},{id}))).status,200);
+});
+
+test('role and operator avatars persist, survive partial edits, clear, and reject unsafe values', async () => {
+  const f = fixture(); await activate(f.context);
+  const avatar = 'data:image/png;base64,iVBORw0KGgo=';
+  const created = await f.routes.get('POST /roles')(req({name:'Portrait',soul:'# SOUL',avatar}));
+  assert.equal(created.status,201); assert.equal(created.body.role.avatar,avatar);
+  const params = {id:created.body.role.id};
+  assert.equal((await f.routes.get('PUT /roles/:id')(req({name:'Renamed'},params))).body.role.avatar,avatar);
+  assert.equal((await f.routes.get('PUT /operator-profile')(req({avatar}))).status,200);
+  assert.equal((await f.routes.get('PUT /operator-profile')(req({name:'Player'}))).body.operatorProfile.avatar,avatar);
+  const reboot = fixture(); reboot.context.settings = f.context.settings; await activate(reboot.context);
+  const boot = (await reboot.routes.get('GET /bootstrap')(req())).body;
+  assert.equal(boot.operator.avatar,avatar); assert.equal(boot.roles.find(role=>role.id===params.id).avatar,avatar);
+  for (const bad of ['javascript:alert(1)','data:image/svg+xml;base64,PHN2Zz4=', 'https://example.com/avatar.png', 'x'.repeat(512001), null, 123]) {
+    assert.equal((await f.routes.get('PUT /roles/:id')(req({avatar:bad},params))).status,400);
+    assert.equal((await f.routes.get('PUT /operator-profile')(req({avatar:bad}))).status,400);
+  }
+  assert.equal((await f.routes.get('PUT /roles/:id')(req({avatar:''},params))).body.role.avatar,'');
+  assert.equal((await f.routes.get('PUT /operator-profile')(req({avatar:''}))).body.operatorProfile.avatar,'');
 });

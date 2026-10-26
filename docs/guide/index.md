@@ -30,5 +30,6 @@ That boundary describes Theater’s conversation design. It is not a guarantee t
 
 Theater stores its roles and conversations in its own Core-managed settings namespace. It does not feed them into Brains. “Separate from agent conversations” does not mean encrypted, offline, or isolated from everyone who can access this Burrow installation. Text goes to the selected configured provider; optional image prompts go through Forge.
 
+## Latest documentation update
 
-
+The **2026-10-26 delta review** covers source **2026.10.25.7**, commit `527dab56e7dd10543bd7805bb1ee6379b25f48fd`: editable role/operator avatars and view-local scroll preservation. The full-review baseline above remains historical; unchanged functionality was not re-certified as a new full review. No application or live-provider tests were run for this update.
