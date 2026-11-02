@@ -33,3 +33,7 @@ Theater stores its roles and conversations in its own Core-managed settings name
 ## Latest documentation update
 
 The **2026-10-26 delta review** covers source **2026.10.25.7**, commit `527dab56e7dd10543bd7805bb1ee6379b25f48fd`: editable role/operator avatars and view-local scroll preservation. The full-review baseline above remains historical; unchanged functionality was not re-certified as a new full review. No application or live-provider tests were run for this update.
+
+## 1 November full documentation reconciliation
+
+All six guides were statically reviewed against Theater `74881aedf68870fa202f36ad908ba0aa7b0ee1a0`, the current Core model facade, and the checked-in UI/server implementation. This includes setup, roles and avatars, conversation lifecycle, sequential group generation, Forge reconciliation, limits, and troubleshooting. Theater exposes effort and temperature, not Core chat's independent thinking-mode selector. No application tests or live providers were run; the earlier test and release receipts remain historical.

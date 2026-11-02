@@ -1,0 +1,12 @@
+<!doctype html><meta charset="utf-8"><title>Isolated Theater candidate fixture</title>
+<link rel="stylesheet" href="/Burrow-UI/src/index.css"><link rel="stylesheet" href="/Burrow-UI/src/app.css">
+<body><main class="settings-blank-slate"><section class="settings-blank-column settings-prototype-sections"><nav class="settings-prototype-section-items">Theater fixture</nav></section><section id="primary" class="settings-blank-column settings-prototype-configuration"></section><section id="overflow" class="settings-blank-column settings-prototype-overflow"></section></main>
+<script type="module">
+const {mountSettings}=await import(new URLSearchParams(location.search).get('baseline')==='1'?'/baseline-settings.js':'/Burrow-Theater/ui/settings.js');
+const state=new URLSearchParams(location.search).get('state')||'role-empty';
+const photo={id:'fixture-photo',contentUrl:'/opaque/fixture-photo',mimeType:'image/png'};
+const pixel='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6Xh8AAAAASUVORK5CYII=';
+const calls=[];window.fixtureCalls=calls;
+const surface=id=>({replace:n=>document.getElementById(id).replaceChildren(...(Array.isArray(n)?n:[n]))});
+mountSettings({section:state.startsWith('player')?'profile':'roles',primary:surface('primary'),overflow:surface('overflow'),api:async(path,init={})=>{calls.push({path,method:init.method||'GET'});if(path==='/bootstrap')return {roles:state==='before'?[]:[{id:'fixture-role',name:'Fixture role',soul:'# SOUL\nA controlled fictional role.'}],operatorProfile:{name:'Fixture player',profile:'Controlled player context.'},forgeImages:{available:true}};if(state.includes('error'))throw Error('Fixture reference request failed');return {ok:true,...(path.startsWith('/roles/')?{roleId:'fixture-role'}:{}),referenceImage:init.method==='DELETE'?null:state.includes('photo')?photo:null};},fetchContent:async(path)=>{calls.push({content:path});return new Response(Uint8Array.from(atob(pixel),c=>c.charCodeAt(0)),{headers:{'content-type':'image/png'}})}});
+</script>

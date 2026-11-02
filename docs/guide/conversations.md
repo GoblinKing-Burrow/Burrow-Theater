@@ -19,6 +19,8 @@ The toolbar exposes **Provider**, **Model**, **Effort**, and **Temp**.
 - Temp is available only when the model advertises temperature support. Its range is 0–2.
 - Switching model keeps the transcript and applies the new model’s advertised defaults in the UI.
 
+Theater does not expose Core chat's independent thinking-mode selector. Its generic model facade resolves the saved Core model configuration; do not interpret Effort as a separate thinking-mode control. If a legacy Off setting is incompatible with a selected model, correct it in Core rather than looking for a Theater-only override.
+
 These settings belong to the conversation. A group uses the same selected model and controls for every participating role.
 
 ## Create a group
@@ -71,4 +73,5 @@ At the start of the composer (with no text selection), **Arrow Up** recalls your
 ## Assembled prompt limit
 
 Theater limits each assembled role prompt—SOUL, operator profile, fiction/cast instructions and accumulated text—to **100,000 UTF-16 code units**, not tokens. If the first prompt is too large, submission is rejected before saving your message or a pending card. A later group-role prompt can exceed the limit after earlier replies: the accepted turn then fails without publishing partial cast replies. Shorten the SOUL/profile or start a fresh session; there is no automatic compaction. See [troubleshooting](troubleshooting.md#conversation-limits).
+
 

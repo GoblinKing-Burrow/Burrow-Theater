@@ -39,12 +39,32 @@ function id(value, name = 'id') {
 function requireOperator(request) { if (request?.auth?.enabled === true && request.auth.authenticated !== true) fail('operator_authentication_required', 401); }
 function response(status, body) { return { status, headers: { 'cache-control': 'no-store' }, body }; }
 function errorResponse(error, logger) {
-  const status = Number(error?.statusCode) || 500;
-  if (status === 500) logger.error('Burrow Theater request failed', { error: error instanceof Error ? error.message : 'unknown' });
-  return response(status, { ok: false, error: status === 500 ? 'internal_error' : error.message });
+  const code = error instanceof Error ? error.message : 'unknown';
+  // Core capability errors cross the Mod host as codes without HTTP status.
+  const coreStatus = {
+    agent_reference_image_invalid: 400, agent_reference_image_too_large: 413,
+    mod_reference_image_invalid: 400, mod_capability_input_invalid: 400,
+    mod_capability_unavailable: 503,
+  };
+  const status = Number(error?.statusCode) || coreStatus[code] || 500;
+  if (status === 500) logger.error('Burrow Theater request failed', { error: code });
+  return response(status, { ok: false, error: status === 500 ? 'internal_error' : code });
 }
 function now() { return new Date().toISOString(); }
 function clone(value) { return structuredClone(value); }
+const REFERENCE_IMAGE_MAX_BYTES = 20 * 1024 * 1024;
+function validateReferenceUpload(body) {
+  if (!plain(body) || Object.keys(body).some((key) => !['fileName', 'content'].includes(key)) ||
+    typeof body.fileName !== 'string' || !body.fileName.trim() || typeof body.content !== 'string') fail('agent_reference_image_invalid');
+  if (body.content.length > Math.ceil(REFERENCE_IMAGE_MAX_BYTES / 3) * 4 + 64) fail('agent_reference_image_too_large', 413);
+  const match = /^data:image\/(?:png|jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})$/.exec(body.content);
+  if (!match || match[1].length % 4 !== 0) fail('agent_reference_image_invalid');
+  // Core validates the decoded image signature, exact canonical base64 and MIME.
+  // Reject oversized input before crossing the Mod capability boundary.
+  const encoded = match[1];
+  if ((encoded.length / 4) * 3 - (encoded.endsWith('==') ? 2 : encoded.endsWith('=') ? 1 : 0) > REFERENCE_IMAGE_MAX_BYTES) fail('agent_reference_image_too_large', 413);
+  return body;
+}
 function validateAvatar(value) {
   const avatar = text(value, 'avatar', 512000);
   if (!avatar || (avatar.length <= 16 && !/[<>:/]/.test(avatar))) return avatar;
@@ -72,7 +92,7 @@ function normalizeConversation(conversation) {
       message.role === 'assistant' && !message.roleId ? { ...message, roleId: conversation.roleId || roleIds[0] } : message) };
 }
 function publicConversation(conversation) {
-  return { ...conversation, messages: (conversation.messages || []).map(({ generationRequest, turnSnapshot, ...message }) => message) };
+  return { ...conversation, messages: (conversation.messages || []).map(({ generationRequest, turnSnapshot, referenceImages, ...message }) => message) };
 }
 function generationPending(conversation) {
   return conversation.messages.some((message) => message.type === 'text_generation' && message.status === 'pending');
@@ -163,12 +183,15 @@ function generationControls(conversation, model) {
   }
   return controls;
 }
-function buildPrompt(role, conversation, roles, operatorProfile) {
+function buildPrompt(role, conversation, roles, operatorProfile, referenceImages = []) {
   const operatorName = operatorProfile?.name || 'You';
   const transcript = conversation.messages.filter((message) => message.type !== 'forge_image').map((message) => `${message.role === 'user' ? operatorName : message.roleName || roles.find((item) => item.id === message.roleId)?.name || message.roleId || 'Role'}:\n${message.content}`).join('\n\n');
   const cast = conversation.roleIds.map((roleId) => roles.find((item) => item.id === roleId)?.name || roleId).join(', ');
   const player = [`Name: ${operatorName}`, operatorProfile?.profile || ''].filter(Boolean).join('\n\n');
-  const prompt = [role.soul, `# Theater boundary\n${FICTION_BOUNDARY}`, role.allowForgeImages ? IMAGE_DIRECTIVE.prompt : '', `# Player\n${player}`, `# Participants\n${cast}\nReply only as ${role.name}.`, '# Conversation', transcript, `${role.name}:`].filter(Boolean).join('\n\n');
+  const portraitDirection = role.allowForgeImages && referenceImages.length
+    ? `For an optional scene illustration, saved reference photos define the canonical appearances of these cast members: ${JSON.stringify(referenceImages.map((item) => item.name))}. Do not invent appearances that conflict with their portraits. Write a standalone scene prompt naming the depicted characters; the photos are supplied only to Forge, not to this text model.`
+    : '';
+  const prompt = [role.soul, `# Theater boundary\n${FICTION_BOUNDARY}`, role.allowForgeImages ? IMAGE_DIRECTIVE.prompt : '', portraitDirection, `# Player\n${player}`, `# Participants\n${cast}\nReply only as ${role.name}.`, '# Conversation', transcript, `${role.name}:`].filter(Boolean).join('\n\n');
   validatePrompt(prompt);
   return prompt;
 }
@@ -190,6 +213,37 @@ export async function activate(context) {
   };
   const saveRoles = (items) => context.settings.set('roles', items);
   const saveConversations = (items) => context.settings.set('conversations', items);
+  const referenceStore = () => {
+    const store = context.forge?.references;
+    if (!store || ['get', 'put', 'remove'].some((method) => typeof store[method] !== 'function')) fail('reference_images_unavailable', 503);
+    return store;
+  };
+  const roleReferenceKey = (roleId) => `role:${roleId}`;
+  const activeRole = async (roleId) => {
+    if (!(await readRoles()).some((role) => role.id === roleId)) fail('role_not_found', 404);
+  };
+  const assertReferenceEditAllowed = async (roleId = null) => {
+    if ((await readConversations()).some((conversation) => workPending(conversation) &&
+      (roleId === null || conversation.roleIds.includes(roleId)))) fail('conversation_turn_in_progress', 409);
+  };
+  const castReferences = async (roles, operatorProfile) => {
+    // An older Core has no reference capability. Text-only Theater remains usable.
+    if (!roles.some((role) => role.allowForgeImages) || !context.forge?.references) return [];
+    const store = referenceStore();
+    const candidates = [...roles.map((role) => ({ key: roleReferenceKey(role.id), name: role.name })),
+      { key: 'operator-profile', name: operatorProfile.name }];
+    const result = [];
+    for (const { key, name } of candidates) {
+      // A busy/unavailable Core read is not proof that this cast has no photos.
+      // Propagate it without accepting the turn; retry must retain identities.
+      const image = await store.get(key);
+      if (image !== null && image !== undefined) {
+        if (typeof image.id !== 'string' || !image.id) fail('reference_image_metadata_invalid', 503);
+        result.push({ key, id: image.id, name });
+      }
+    }
+    return result;
+  };
   const coreOperatorIdentity = async () => {
     try {
       const identity = await context.operator?.displayIdentity?.();
@@ -231,12 +285,36 @@ export async function activate(context) {
     await context.settings.set('operatorProfile', profile);
     return response(200, { ok: true, operatorProfile: profile });
   })));
+  context.api.get('/operator-profile/reference-image', route(async () =>
+    response(200, { ok: true, referenceImage: await referenceStore().get('operator-profile') })));
+  context.api.put('/operator-profile/reference-image', route(async ({ body }) => serial(async () => {
+    await assertReferenceEditAllowed();
+    const referenceImage = await referenceStore().put('operator-profile', validateReferenceUpload(body));
+    return response(200, { ok: true, referenceImage });
+  })));
+  context.api.delete('/operator-profile/reference-image', route(async () => serial(async () => {
+    await assertReferenceEditAllowed();
+    return response(200, { ok: true, referenceImage: await referenceStore().remove('operator-profile') });
+  })));
 
   context.api.post('/roles', route(async ({ body }) => serial(async () => {
     const timestamp = now();
     const role = { id: randomUUID(), ...validateRole(body), createdAt: timestamp, updatedAt: timestamp };
     const roles = await readRoles(); roles.push(role); await saveRoles(roles);
     return response(201, { ok: true, role });
+  })));
+  context.api.get('/roles/:id/reference-image', route(async ({ params }) => {
+    const roleId = id(params.id); await activeRole(roleId);
+    return response(200, { ok: true, roleId, referenceImage: await referenceStore().get(roleReferenceKey(roleId)) });
+  }));
+  context.api.put('/roles/:id/reference-image', route(async ({ params, body }) => serial(async () => {
+    const roleId = id(params.id); await activeRole(roleId); await assertReferenceEditAllowed(roleId);
+    const referenceImage = await referenceStore().put(roleReferenceKey(roleId), validateReferenceUpload(body));
+    return response(200, { ok: true, roleId, referenceImage });
+  })));
+  context.api.delete('/roles/:id/reference-image', route(async ({ params }) => serial(async () => {
+    const roleId = id(params.id); await activeRole(roleId); await assertReferenceEditAllowed(roleId);
+    return response(200, { ok: true, roleId, referenceImage: await referenceStore().remove(roleReferenceKey(roleId)) });
   })));
   context.api.put('/roles/:id', route(async ({ params, body }) => serial(async () => {
     const roleId = id(params.id); const roles = await readRoles(); const index = roles.findIndex((item) => item.id === roleId);
@@ -249,6 +327,9 @@ export async function activate(context) {
     const roleId = id(params.id); const roles = await readRoles();
     if (!roles.some((item) => item.id === roleId)) fail('role_not_found', 404);
     if ((await readConversations()).some((item) => item.roleIds.includes(roleId))) fail('role_in_use', 409);
+    // Remove the Core-owned portrait before deleting its role. If cleanup fails,
+    // keep the role so a retry never leaves an orphaned private portrait.
+    if (context.forge?.references) await referenceStore().remove(roleReferenceKey(roleId));
     await saveRoles(roles.filter((item) => item.id !== roleId));
     return response(200, { ok: true });
   })));
@@ -303,6 +384,7 @@ export async function activate(context) {
     if (!model) fail('model_not_found', 404);
     const controls = generationControls(conversation, model);
     const operatorProfile = await readOperatorProfile();
+    const referenceImages = await castReferences(selectedRoles, operatorProfile);
     if (conversation.titleSource === 'fallback' && !conversation.messages.some((message) => message.role === 'user')) {
       const derived = automaticTitle(content);
       if (derived) { conversation.title = derived; conversation.titleSource = 'automatic'; }
@@ -310,10 +392,10 @@ export async function activate(context) {
     conversation.messages.push({ id: randomUUID(), role: 'user', content, createdAt: now() });
     const firstRole = selectedRoles[0];
     const turnSnapshot = { roles: selectedRoles.map(clone), nextRoleIndex: 1, completedMessages: [], connectionId: conversation.connectionId,
-      model: conversation.model, maxTokens, controls: clone(controls), operatorProfile: clone(operatorProfile) };
+      model: conversation.model, maxTokens, controls: clone(controls), operatorProfile: clone(operatorProfile), referenceImages };
     conversation.messages.push(generationMessage({ role: firstRole,
       generationRequest: { connectionId: conversation.connectionId, model: conversation.model,
-        prompt: buildPrompt(firstRole, conversation, selectedRoles, operatorProfile), maxTokens, ...controls }, turnSnapshot }));
+        prompt: buildPrompt(firstRole, conversation, selectedRoles, operatorProfile, referenceImages), maxTokens, ...controls }, turnSnapshot }));
     conversation.updatedAt = now(); conversations[index] = conversation; await saveConversations(conversations);
     return response(202, { ok: true, conversation: publicConversation(conversation) });
   })));
@@ -344,7 +426,9 @@ export async function activate(context) {
         if (parsed.prompt) {
           const timestamp = now();
           replacement.push({ id: randomUUID(), type: 'forge_image', role: 'assistant', roleId: role.id, roleName: role.name,
-            content: '', prompt: parsed.prompt, status: 'pending', jobId: null, previewUrl: null, error: null, createdAt: timestamp, updatedAt: timestamp });
+            content: '', prompt: parsed.prompt,
+            ...(pending.turnSnapshot.referenceImages?.length ? { referenceImages: clone(pending.turnSnapshot.referenceImages) } : {}),
+            status: 'pending', jobId: null, previewUrl: null, error: null, createdAt: timestamp, updatedAt: timestamp });
         }
         await serial(async () => {
           const conversations = await readConversations(); const index = conversations.findIndex((item) => item.id === conversationId);
@@ -360,7 +444,7 @@ export async function activate(context) {
             const nextSnapshot = { ...snapshot, nextRoleIndex: snapshot.nextRoleIndex + 1, completedMessages };
             const nextMessage = generationMessage({ role: nextRole,
               generationRequest: { connectionId: snapshot.connectionId, model: snapshot.model,
-                prompt: buildPrompt(nextRole, promptConversation, snapshot.roles, snapshot.operatorProfile), maxTokens: snapshot.maxTokens, ...snapshot.controls },
+                prompt: buildPrompt(nextRole, promptConversation, snapshot.roles, snapshot.operatorProfile, snapshot.referenceImages), maxTokens: snapshot.maxTokens, ...snapshot.controls },
               turnSnapshot: nextSnapshot });
             conversations[index].messages.splice(messageIndex, 1, nextMessage);
           } else {
@@ -403,10 +487,17 @@ export async function activate(context) {
       try {
         const job = image.jobId
           ? await context.forge.jobs.read(image.jobId)
-          : (await context.forge.images.create({ prompt: image.prompt, idempotencyKey: `message-${image.id}` })).job;
+          : (await context.forge.images.create({ prompt: image.prompt, idempotencyKey: `message-${image.id}`,
+            ...(image.referenceImages?.length ? { referenceImages: image.referenceImages } : {}) })).job;
         Object.assign(image, projectImageJob(image, job));
       } catch (error) {
         context.logger.warn('Burrow Theater could not reconcile Forge image job', { conversationId, messageId: image.id, error: error instanceof Error ? error.message : 'unknown' });
+        // A missing/replaced portrait or unsupported image model cannot become
+        // valid on retry. Transport ambiguity still retries this same message key.
+        if (['agent_reference_image_missing', 'agent_reference_image_invalid', 'agent_reference_image_unsupported',
+          'agent_reference_image_image_only', 'reference_images_too_large', 'mod_capability_input_invalid'].includes(error?.message)) {
+          Object.assign(image, { status: 'failed', error: error.message, updatedAt: now() });
+        }
       }
     }
     if (pending.length) await serial(async () => {

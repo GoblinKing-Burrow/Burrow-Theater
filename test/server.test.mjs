@@ -4,16 +4,21 @@ import { activate, theaterContract } from '../server/index.mjs';
 
 function fixture() {
   const routes = new Map(); const settings = new Map(); const logs = [];
-  const models = [{ connectionId: 'local', model: 'stheno', provider: 'ollama' }]; const generations = []; const generationJobs = new Map(); const forgeCreates = []; const forgeJobs = new Map();
+  const models = [{ connectionId: 'local', model: 'stheno', provider: 'ollama' }]; const generations = []; const generationJobs = new Map(); const forgeCreates = []; const forgeJobs = new Map(); const references = new Map();
+  const referenceCalls = []; const reference = (key, image) => image ? ({ id: image.id, contentUrl: `/api/mod-reference-images/burrow-theater/${encodeURIComponent(key)}/content?id=${image.id}`, mimeType: image.mimeType, fileName: image.fileName, sizeBytes: image.sizeBytes, updatedAt: now }) : null;
   const context = {
     api: Object.fromEntries(['get', 'post', 'put', 'patch', 'delete'].map((method) => [method, (path, handler) => routes.set(`${method.toUpperCase()} ${path}`, handler)])),
     settings: { get: async (name, fallback = null) => settings.has(name) ? structuredClone(settings.get(name)) : fallback, set: async (name, value) => (settings.set(name, structuredClone(value)), value), delete: async (name) => settings.delete(name) },
     models: { list: async () => models, generateText: async (input) => (generations.push(input), { text: '*The curtain rises.* Welcome.' }), generations: { submit: async (input) => { const existing = [...generationJobs.values()].find(job => job.idempotencyKey === input.idempotencyKey); if (existing) return { job: structuredClone(existing), replayed: true }; const job = { id: `generation-${generationJobs.size + 1}`, idempotencyKey: input.idempotencyKey, status: 'running', text: null, error: null }; generationJobs.set(job.id, job); try { const result = await context.models.generateText(input); Object.assign(job, { status: 'succeeded', text: result.text }); } catch (error) { Object.assign(job, { status: 'failed', error: error.message }); } return { job: structuredClone(job), replayed: false }; }, read: async (jobId) => { const job = generationJobs.get(jobId); if (!job) throw Error('mod_generation_not_found'); return structuredClone(job); } } },
-    forge: { images: { status: async () => ({ available: true }), create: async (input) => { forgeCreates.push(structuredClone(input)); const job = { id: `job-${forgeCreates.length}`, kind: 'image', status: 'queued', artifacts: [], error: null, createdAt: now, updatedAt: now }; forgeJobs.set(job.id, job); return { job, replayed: false }; } }, jobs: { read: async (jobId) => { const job = forgeJobs.get(jobId); if (!job) throw Error('forge_job_not_found'); return structuredClone(job); } } },
+    forge: { images: { status: async () => ({ available: true }), create: async (input) => { forgeCreates.push(structuredClone(input)); const job = { id: `job-${forgeCreates.length}`, kind: 'image', status: 'queued', artifacts: [], error: null, createdAt: now, updatedAt: now }; forgeJobs.set(job.id, job); return { job, replayed: false }; } }, jobs: { read: async (jobId) => { const job = forgeJobs.get(jobId); if (!job) throw Error('forge_job_not_found'); return structuredClone(job); } }, references: {
+      get: async key => (referenceCalls.push(['get', key]), reference(key, references.get(key))),
+      put: async (key, body) => { referenceCalls.push(['put', key, body]); const image = { id: `ref-${referenceCalls.length}`, mimeType: body.content.match(/^data:(.*?);/)?.[1], fileName: body.fileName, sizeBytes: 24 }; references.set(key, image); return reference(key, image); },
+      remove: async key => (referenceCalls.push(['remove', key]), references.delete(key), null),
+    } },
     operator: { displayIdentity: async () => ({ id: 'operator', name: 'Rob' }) },
     logger: Object.fromEntries(['debug', 'info', 'warn', 'error'].map((level) => [level, (...args) => logs.push([level, ...args])]))
   };
-  return { context, routes, settings, models, generations, generationJobs, forgeCreates, forgeJobs, logs };
+  return { context, routes, settings, models, generations, generationJobs, forgeCreates, forgeJobs, references, referenceCalls, logs };
 }
 const now = '2026-10-21T12:00:00.000Z';
 const req = (body = {}, params = {}, auth = { enabled: true, authenticated: true }) => ({ body, params, auth, query: {}, headers: {} });
@@ -35,7 +40,7 @@ async function completeTurn(f, conversationId, content = 'Hello') {
 
 test('activation exposes only SOUL role and conversation routes with no agent tools', async () => {
   const f = fixture(); const cleanup = await activate(f.context);
-  assert.deepEqual([...f.routes.keys()], ['GET /bootstrap', 'PUT /operator-profile', 'POST /roles', 'PUT /roles/:id', 'DELETE /roles/:id', 'POST /conversations', 'PUT /conversations/:id', 'DELETE /conversations/:id', 'POST /conversations/:id/turn', 'POST /conversations/:id/generation/reconcile', 'POST /conversations/:id/forge/reconcile']);
+  assert.deepEqual([...f.routes.keys()], ['GET /bootstrap', 'PUT /operator-profile', 'GET /operator-profile/reference-image', 'PUT /operator-profile/reference-image', 'DELETE /operator-profile/reference-image', 'POST /roles', 'GET /roles/:id/reference-image', 'PUT /roles/:id/reference-image', 'DELETE /roles/:id/reference-image', 'PUT /roles/:id', 'DELETE /roles/:id', 'POST /conversations', 'PUT /conversations/:id', 'DELETE /conversations/:id', 'POST /conversations/:id/turn', 'POST /conversations/:id/generation/reconcile', 'POST /conversations/:id/forge/reconcile']);
   cleanup(); assert.deepEqual(f.logs.map((item) => item[1]), ['Burrow Theater activated', 'Burrow Theater stopped']);
 });
 
@@ -415,4 +420,181 @@ test('role and operator avatars persist, survive partial edits, clear, and rejec
   }
   assert.equal((await f.routes.get('PUT /roles/:id')(req({avatar:''},params))).body.role.avatar,'');
   assert.equal((await f.routes.get('PUT /operator-profile')(req({avatar:''}))).body.operatorProfile.avatar,'');
+});
+
+const portraitUpload = { fileName: 'party.png', content: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB' };
+const referenceRoute = (f, method, path, body = {}, params = {}) => f.routes.get(`${method} ${path}`)(req(body, params));
+
+test('role and player photos use independent Core metadata, never avatars; saved-role, auth and input guards', async () => {
+  const f = fixture(); await activate(f.context);
+  const role = await referenceRoute(f, 'POST', '/roles', { name: 'Mara', soul: '# SOUL', avatar: '🎭' });
+  const path = '/roles/:id/reference-image', params = { id: role.body.role.id };
+  assert.equal((await referenceRoute(f, 'GET', path, {}, { id: 'missing' })).status, 404);
+  assert.deepEqual((await referenceRoute(f, 'GET', path, {}, params)).body, { ok: true, roleId: params.id, referenceImage: null });
+  assert.deepEqual((await referenceRoute(f, 'GET', '/operator-profile/reference-image')).body, { ok: true, referenceImage: null });
+  assert.equal((await f.routes.get('PUT /roles/:id/reference-image')(req(portraitUpload, params, { enabled: true, authenticated: false }))).status, 401);
+  assert.equal(f.referenceCalls.filter(([method]) => method === 'put').length, 0);
+  for (const content of ['data:image/gif;base64,AAAA', 'https://example.com/photo.png', 'data:image/png;base64,AAAAA', 'data:image/png;base64,' + 'A'.repeat(28_000_000)]) {
+    const result = await referenceRoute(f, 'PUT', path, { ...portraitUpload, content }, params);
+    assert.equal(result.status, content.length > 27_000_000 ? 413 : 400);
+  }
+  const uploaded = await referenceRoute(f, 'PUT', path, portraitUpload, params);
+  assert.equal(uploaded.status, 200);
+  assert.deepEqual(Object.keys(uploaded.body.referenceImage), ['id', 'contentUrl', 'mimeType', 'fileName', 'sizeBytes', 'updatedAt']);
+  assert.equal(uploaded.body.roleId, params.id);
+  assert.match(uploaded.body.referenceImage.contentUrl, /^\/api\/mod-reference-images\/burrow-theater\/role%3A/);
+  assert.equal((await referenceRoute(f, 'GET', path, {}, params)).body.referenceImage.id, uploaded.body.referenceImage.id);
+  const operator = await referenceRoute(f, 'PUT', '/operator-profile/reference-image', { ...portraitUpload, fileName: 'player.png' });
+  assert.equal(operator.status, 200);
+  assert.equal((await referenceRoute(f, 'GET', '/operator-profile/reference-image')).body.referenceImage.id, operator.body.referenceImage.id);
+  const bootstrap = await referenceRoute(f, 'GET', '/bootstrap');
+  assert.equal(bootstrap.body.roles.find(item => item.id === params.id).avatar, '🎭');
+  assert.equal(bootstrap.body.roles.find(item => item.id === params.id).referenceImage, undefined);
+  assert.equal(bootstrap.body.operatorProfile.referenceImage, undefined);
+  assert.equal((await referenceRoute(f, 'DELETE', path, {}, params)).body.referenceImage, null);
+  assert.deepEqual((await referenceRoute(f, 'DELETE', '/operator-profile/reference-image')).body, { ok: true, referenceImage: null });
+  assert.equal(f.references.size, 0);
+  assert.deepEqual([...f.settings.keys()], ['roles']);
+});
+
+test('Core portrait validation errors pass through to API instead of returning opaque 500', async () => {
+  const f = fixture(); await activate(f.context);
+  const original = f.context.forge.references.put;
+  for (const [code, status] of [['agent_reference_image_invalid', 400], ['agent_reference_image_too_large', 413], ['mod_capability_input_invalid', 400]]) {
+    f.context.forge.references.put = async () => { throw Error(code); };
+    const result = await referenceRoute(f, 'PUT', '/operator-profile/reference-image', portraitUpload);
+    assert.equal(result.status, status); assert.equal(result.body.error, code);
+  }
+  f.context.forge.references.put = original;
+});
+
+test('missing Core reference proxy reports unavailable without bricking text-only Theater', async () => {
+  const f = fixture(); delete f.context.forge.references; await activate(f.context);
+  assert.equal((await referenceRoute(f, 'GET', '/operator-profile/reference-image')).status, 503);
+  assert.equal((await referenceRoute(f, 'PUT', '/operator-profile/reference-image', portraitUpload)).body.error, 'reference_images_unavailable');
+  await enableRoleImages(f); const made = await createConversation(f);
+  const turn = await completeTurn(f, made.body.conversation.id);
+  assert.equal(turn.status, 200); assert.equal(turn.body.conversation.messages[1].role, 'assistant');
+  assert.equal((await referenceRoute(f, 'GET', '/bootstrap')).status, 200);
+});
+
+test('portrait changes require settled relevant text and image work; role deletion cleans portrait before deleting role', async () => {
+  const f = await groupFixture();
+  const foreign = await referenceRoute(f, 'POST', '/roles', { name: 'Foreign', soul: '# SOUL' });
+  const group = await groupCreate(f); const id = group.body.conversation.id;
+  await referenceRoute(f, 'POST', '/conversations/:id/turn', { content: 'Hello' }, { id });
+  const path = '/roles/:id/reference-image', params = { id: f.roleIds[1] };
+  for (const method of ['PUT', 'DELETE']) {
+    assert.equal((await referenceRoute(f, method, path, portraitUpload, params)).status, 409);
+    assert.equal((await referenceRoute(f, method, '/operator-profile/reference-image', portraitUpload)).status, 409);
+    assert.equal((await referenceRoute(f, method, path, portraitUpload, { id: foreign.body.role.id })).status, 200);
+  }
+  await reconcileGeneration(f, id); await reconcileGeneration(f, id);
+  const stored = f.settings.get('conversations'); stored[0].messages.push({ id: 'image-pending', type: 'forge_image', status: 'pending' }); f.settings.set('conversations', stored);
+  assert.equal((await referenceRoute(f, 'PUT', path, portraitUpload, params)).status, 409);
+  assert.equal((await referenceRoute(f, 'DELETE', '/operator-profile/reference-image')).status, 409);
+  assert.equal((await referenceRoute(f, 'PUT', path, portraitUpload, { id: foreign.body.role.id })).status, 200);
+  const foreignId = foreign.body.role.id;
+  f.context.forge.references.remove = async key => { if (key === `role:${foreignId}`) throw Error('lost_connection'); return null; };
+  assert.equal((await referenceRoute(f, 'DELETE', '/roles/:id', {}, { id: foreignId })).status, 500);
+  assert.equal((await referenceRoute(f, 'GET', '/bootstrap')).body.roles.some(item => item.id === foreignId), true);
+  f.context.forge.references.remove = async key => (f.referenceCalls.push(['remove', key]), f.references.delete(key), null);
+  assert.equal((await referenceRoute(f, 'DELETE', '/roles/:id', {}, { id: foreignId })).status, 200);
+  assert.equal(f.references.has(`role:${foreignId}`), false);
+});
+
+test('group portraits are captured once, hidden from clients, and reused in order across both replies and stable Forge retry', async () => {
+  const f = await groupFixture(); for (const roleId of f.roleIds) await enableRoleImages(f, roleId);
+  const player = (await referenceRoute(f, 'PUT', '/operator-profile/reference-image', portraitUpload)).body.referenceImage;
+  const mara = (await referenceRoute(f, 'PUT', '/roles/:id/reference-image', portraitUpload, { id: f.roleIds[1] })).body.referenceImage;
+  const group = await groupCreate(f); const id = group.body.conversation.id;
+  f.context.models.generateText = async input => (f.generations.push(input), { text: 'Scene.\n<!-- BURROW_FORGE_IMAGE {"prompt":"Party at the gates"} -->' });
+  const accepted = await referenceRoute(f, 'POST', '/conversations/:id/turn', { content: 'Go.' }, { id });
+  assert.equal(accepted.status, 202);
+  const refs = [ { key: `role:${f.roleIds[1]}`, id: mara.id, name: 'Mara' }, { key: 'operator-profile', id: player.id, name: 'Rob' } ];
+  const pending = f.settings.get('conversations')[0].messages.at(-1).turnSnapshot;
+  assert.deepEqual(pending.referenceImages, refs);
+  assert.equal(JSON.stringify(accepted.body).includes(player.id), false);
+  assert.equal(JSON.stringify(accepted.body).includes(mara.id), false);
+  assert.equal(Object.hasOwn(accepted.body.conversation.messages.at(-1), 'turnSnapshot'), false);
+  // A saved portrait cannot be replaced mid-turn, even between two group text replies.
+  assert.equal((await referenceRoute(f, 'DELETE', '/operator-profile/reference-image')).status, 409);
+  const done = await completePendingGroup(f, id);
+  assert.equal(done.body.conversation.messages.filter(item => item.type === 'forge_image').length, 2);
+  assert.equal(f.generations.length, 2); assert.match(f.generations[0].prompt, /canonical appearances of these cast members: \["Mara","Rob"\]/);
+  assert.match(f.generations[1].prompt, /canonical appearances of these cast members: \["Mara","Rob"\]/);
+  assert.equal(f.generations.every(input => !Object.hasOwn(input, 'tools') && !Object.hasOwn(input, 'images')), true);
+  const cards = done.body.conversation.messages.filter(item => item.type === 'forge_image');
+  assert.equal(cards.every(card => !Object.hasOwn(card, 'referenceImages')), true);
+  assert.equal(JSON.stringify(done.body).includes(mara.id), false);
+  assert.deepEqual(f.settings.get('conversations')[0].messages.filter(item => item.type === 'forge_image').map(item => item.referenceImages), [refs, refs]);
+  const calls = [];
+  f.context.forge.images.create = async input => { calls.push(structuredClone(input)); if (calls.length === 1) throw Error('connection_lost'); return { job: { id: `job-${calls.length}`, status: 'queued', artifacts: [] } }; };
+  const first = await referenceRoute(f, 'POST', '/conversations/:id/forge/reconcile', {}, { id });
+  assert.equal(first.body.conversation.messages.find(item => item.id === cards[0].id).status, 'pending');
+  const again = await referenceRoute(f, 'POST', '/conversations/:id/forge/reconcile', {}, { id });
+  assert.equal(calls[0].idempotencyKey, calls[2].idempotencyKey);
+  assert.deepEqual(calls.map(input => input.referenceImages), [refs, refs, refs]);
+  assert.deepEqual(f.settings.get('conversations')[0].messages.filter(item => item.type === 'forge_image')[0].referenceImages, refs);
+  assert.equal(again.body.conversation.messages.every(item => !Object.hasOwn(item, 'referenceImages')), true);
+});
+
+async function completePendingGroup(f, id) {
+  let turn;
+  for (let index = 0; index < 8; index += 1) {
+    turn = await reconcileGeneration(f, id);
+    if (!turn.body.conversation.messages.some(item => item.type === 'text_generation' && item.status === 'pending')) break;
+  }
+  return turn;
+}
+
+test('deterministic portrait admission failure settles a visible image, but legacy/no-reference cards retain plain requests', async () => {
+  const f = fixture(); await activate(f.context); await enableRoleImages(f);
+  const made = await createConversation(f); const id = made.body.conversation.id;
+  f.context.models.generateText = async () => ({ text: 'Reply\n<!-- BURROW_FORGE_IMAGE {"prompt":"Plain scene"} -->' });
+  const plainTurn = await completeTurn(f, id);
+  const firstCard = plainTurn.body.conversation.messages.at(-1);
+  assert.equal(Object.hasOwn(f.settings.get('conversations')[0].messages.at(-1), 'referenceImages'), false);
+  const legacy = f.settings.get('conversations'); legacy[0].messages.push({ id: 'legacy-card', type: 'forge_image', status: 'pending', prompt: 'Old scene', role: 'assistant', jobId: null }); f.settings.set('conversations', legacy);
+  const noRefs = await referenceRoute(f, 'POST', '/conversations/:id/forge/reconcile', {}, { id });
+  assert.equal(noRefs.body.conversation.messages.find(item => item.id === firstCard.id).status, 'pending');
+  assert.equal(f.forgeCreates.length, 2);
+  assert.equal(f.forgeCreates.every(input => !Object.hasOwn(input, 'referenceImages')), true);
+  for (const code of ['agent_reference_image_missing', 'agent_reference_image_invalid', 'agent_reference_image_unsupported', 'agent_reference_image_image_only', 'mod_capability_input_invalid']) {
+    const stored = f.settings.get('conversations'); stored[0].messages.push({ id: `failed-${code}`, type: 'forge_image', status: 'pending', prompt: 'Portrait scene', role: 'assistant', jobId: null, referenceImages: [{ key: 'operator-profile', id: 'gone', name: 'Rob' }] }); f.settings.set('conversations', stored);
+    f.context.forge.images.create = async input => { if (input.referenceImages) throw Error(code); return { job: { id: 'running', status: 'running', artifacts: [] } }; };
+    const result = await referenceRoute(f, 'POST', '/conversations/:id/forge/reconcile', {}, { id });
+    const failed = result.body.conversation.messages.find(item => item.id === `failed-${code}`);
+    assert.equal(failed.status, 'failed'); assert.equal(failed.error, code);
+    assert.equal(Object.hasOwn(failed, 'referenceImages'), false);
+  }
+});
+
+test('illustrating role sees saved portraits of cast members without their own Forge permission, not unrelated roles or avatars', async () => {
+  const f = await groupFixture(); await enableRoleImages(f, f.roleIds[0]);
+  const outsider = await referenceRoute(f, 'POST', '/roles', { name: 'Outsider', soul: '# SOUL' });
+  const portrait = (await referenceRoute(f, 'PUT', '/roles/:id/reference-image', portraitUpload, { id: f.roleIds[1] })).body.referenceImage;
+  await referenceRoute(f, 'PUT', '/roles/:id/reference-image', portraitUpload, { id: outsider.body.role.id });
+  const made = await groupCreate(f); const id = made.body.conversation.id;
+  f.context.models.generateText = async input => (f.generations.push(input), { text: 'A scene.\n<!-- BURROW_FORGE_IMAGE {"prompt":"The party"} -->' });
+  const turn = await completeTurn(f, id);
+  assert.equal(turn.body.conversation.messages.filter(item => item.type === 'forge_image').length, 1);
+  assert.match(f.generations[0].prompt, /Mara/);
+  assert.doesNotMatch(f.generations[1].prompt, /canonical appearances/);
+  await referenceRoute(f, 'POST', '/conversations/:id/forge/reconcile', {}, { id });
+  assert.deepEqual(f.forgeCreates[0].referenceImages, [{ key: `role:${f.roleIds[1]}`, id: portrait.id, name: 'Mara' }]);
+  assert.deepEqual(f.forgeCreates[0].prompt, 'The party');
+  assert.equal(f.forgeCreates[0].referenceImages.some(item => item.name === 'Outsider'), false);
+});
+
+test('temporary Core portrait read unavailability never admits a reference-free replacement turn', async () => {
+  const f = fixture(); await activate(f.context);
+  await f.routes.get('PUT /roles/:id')(req({ allowForgeImages: true }, { id: 'house-goblin' }));
+  f.context.forge.references = { get: async () => { throw Error('mod_capability_unavailable'); }, put() {}, remove() {} };
+  const created = await createConversation(f); const conversationId = created.body.conversation.id;
+  const accepted = await f.routes.get('POST /conversations/:id/turn')(req({ content: 'show us' }, { id: conversationId }));
+  assert.equal(accepted.status, 503);
+  assert.equal(accepted.body.error, 'mod_capability_unavailable');
+  assert.equal(f.settings.get('conversations')[0].messages.length, 0);
+  assert.equal(f.forgeCreates.length, 0);
 });

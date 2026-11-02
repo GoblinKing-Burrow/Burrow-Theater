@@ -62,3 +62,13 @@ cast member's oversized prompt fails the group turn without publishing partial
 replies. Ambiguous admission failures retain the same idempotency key for retry.
 
 
+### Canonical reference photos
+
+In Theater Settings, saved roles and the operator/player profile have a separate
+**Reference photo** control. Upload or focus that control and paste an original
+PNG, JPEG, or WebP (up to 20 MiB). Photos save independently of name/SOUL/profile
+and display-avatar drafts; display avatars are unchanged. Save a new role before
+adding its reference photo. Replace/remove changes the canonical photo used for
+future illustrations, not existing generated images. Pending text/image work can
+block changes; retry after that work finishes. Preview loading uses Burrow's
+authenticated content bridge and does not expose a public image URL.
