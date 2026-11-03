@@ -54,10 +54,18 @@ There is no conversation file export, branching, regenerate button, or message e
 
 Roles, conversations and the Theater-specific operator profile live in Theater’s Core-managed settings namespace. They are distinct from agent sessions and Brains, but there is no Theater-specific encryption or per-conversation isolation policy in this implementation.
 
-Selected providers receive conversation text for generation. Forge receives requested image prompts. Treat model/provider selection and access to the Burrow installation as part of your data-handling decision.
+Selected providers receive conversation text for generation. Forge receives requested image prompts and any saved cast reference photos selected for the turn; the configured image provider receives those image inputs. Reference-photo bytes are Core-owned and served through authenticated media access, separately from display avatars. They are not supplied to the role text model. Treat model/provider selection and access to the Burrow installation as part of your data-handling decision.
 
 ## An avatar will not save
 
 Wait for **Processing image…** to finish and then save the role/profile; selecting an image only changes the preview. The browser rejects non-image files, unreadable images and source files over 50,000,000 bytes. It shrinks/optimizes accepted images to fit the saved 512,000-character data-URL limit. Try a smaller ordinary image if processing fails.
 
 The API accepts an empty avatar, short plain-text fallback (up to 16 UTF-16 units, excluding `<`, `>`, `:`, `/`), or a base64 PNG/JPEG/WebP/GIF image data URL within that limit. External URLs and SVG data URLs are not accepted. Omitting `avatar` on an edit preserves it; an empty string clears it. Role edits remain blocked while a referring conversation has pending text or Forge image work. These are avatars, not character-card imports.
+
+## A reference photo will not save or an illustration fails
+
+Use the separate **Reference photo** control, not **Avatar**. Save a new role before adding its photo. PNG, JPEG and WebP are supported up to 20 MiB; GIF, SVG and remote URLs are not accepted. Photos save independently of role/profile text and avatar drafts. **Retry** after a preview failure reloads the saved preview rather than uploading again.
+
+Wait for pending work to finish before edits: a role photo is protected while a conversation using that role has pending text or images, and the player photo is protected while any conversation has pending work. If reference-photo support is unavailable, update to compatible Core and Theater versions; ordinary text-only conversations still work on older Core.
+
+Forge must support reference-image generation for the selected model. A missing, replaced or invalid saved reference or an unsupported model fails the illustration visibly without silently substituting an identity. Existing failed image cards have no dedicated retry button; correct the configuration/photo before requesting a new illustration. A transient Core reference read failure before turn admission rejects that submission rather than treating the cast as having no photos. Check the error and retry after service recovers.

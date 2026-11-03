@@ -6,7 +6,7 @@
 
 Burrow Theater is a place for fictional conversations. Give a role a name and a SOUL, choose one of Burrow’s configured text models, and start talking. Bring several roles into the same conversation when one goblin is not enough.
 
-Theater keeps the familiar chat layout without bringing along agent tools, workspace context, tasks, Brains, handoffs, or subagents. Each role receives its SOUL, a fiction boundary, your Theater-specific operator profile, the cast’s names, and the conversation’s text. Optional Forge images can illustrate the scene.
+Theater keeps the familiar chat layout without bringing along agent tools, workspace context, tasks, Brains, handoffs, or subagents. Each role receives its SOUL, a fiction boundary, your Theater-specific operator profile, the cast’s names, and the conversation’s text. Optional Forge images can illustrate the scene, using independently saved role and player reference photos when present.
 
 See [setup and release availability](installation.md#release-availability) for installation and daily-sync timing.
 
@@ -28,7 +28,7 @@ A Theater role is a saved fictional identity, not an operational Burrow agent. I
 
 That boundary describes Theater’s conversation design. It is not a guarantee that a model will never say something inaccurate. When a role says it opened a door or repaired a machine, read that as part of the story.
 
-Theater stores its roles and conversations in its own Core-managed settings namespace. It does not feed them into Brains. “Separate from agent conversations” does not mean encrypted, offline, or isolated from everyone who can access this Burrow installation. Text goes to the selected configured provider; optional image prompts go through Forge.
+Theater stores its roles and conversations in its own Core-managed settings namespace. It does not feed them into Brains. “Separate from agent conversations” does not mean encrypted, offline, or isolated from everyone who can access this Burrow installation. Text goes to the selected configured provider; optional image prompts and selected cast reference photos go through Forge to the configured image provider.
 
 ## Latest documentation update
 
@@ -37,3 +37,7 @@ The **2026-10-26 delta review** covers source **2026.10.25.7**, commit `527dab56
 ## 1 November full documentation reconciliation
 
 All six guides were statically reviewed against Theater `74881aedf68870fa202f36ad908ba0aa7b0ee1a0`, the current Core model facade, and the checked-in UI/server implementation. This includes setup, roles and avatars, conversation lifecycle, sequential group generation, Forge reconciliation, limits, and troubleshooting. Theater exposes effort and temperature, not Core chat's independent thinking-mode selector. No application tests or live providers were run; the earlier test and release receipts remain historical.
+
+## 2 November documentation update
+
+The ordinary delta review covers Theater `3034d1afc91261d6f1d13cb81d6a4e30b4728a8a`: independent role/player reference-photo controls and reuse of the ordered cast portraits for Forge illustrations. The full-review receipt above remains dated; this update used static source inspection, not application or live-provider tests.

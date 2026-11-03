@@ -41,6 +41,8 @@ Open **Settings → Theater → Operator profile** to choose the preferred name 
 
 The same Settings page has an **Avatar** control: **Change** or paste an image into it, wait for processing, then **Save profile**. Use **Remove** and save to restore the fallback initial. This avatar appears on your Theater messages; it is display data and is not supplied as image input to the text model. See [avatar limits](roles.md#choose-or-remove-an-avatar).
 
+The same page also has a separate **Reference photo** control. Upload or paste an original PNG, JPEG, or WebP up to 20 MiB; this saves independently of **Save profile** and the display avatar. Replace/remove affects future Forge illustrations, not existing generated images. Operator-photo edits are blocked while any Theater conversation has pending text or image work. See [reference-photo behavior](forge-images.md#canonical-cast-reference-photos-server-contract).
+
 ## What each role receives
 
 - Its own current SOUL.
@@ -73,5 +75,3 @@ At the start of the composer (with no text selection), **Arrow Up** recalls your
 ## Assembled prompt limit
 
 Theater limits each assembled role prompt—SOUL, operator profile, fiction/cast instructions and accumulated text—to **100,000 UTF-16 code units**, not tokens. If the first prompt is too large, submission is rejected before saving your message or a pending card. A later group-role prompt can exceed the limit after earlier replies: the accepted turn then fails without publishing partial cast replies. Shorten the SOUL/profile or start a fresh session; there is no automatic compaction. See [troubleshooting](troubleshooting.md#conversation-limits).
-
-

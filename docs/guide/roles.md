@@ -1,6 +1,6 @@
 # Create and edit SOUL roles
 
-A role has **Role name**, **SOUL**, an optional **Avatar**, and an optional **Allow Forge images** setting. The SOUL is Markdown describing the character, voice, relationships, and boundaries of the fiction.
+A role has **Role name**, **SOUL**, an optional **Avatar**, an optional **Reference photo** for a saved role, and an optional **Allow Forge images** setting. The SOUL is Markdown describing the character, voice, relationships, and boundaries of the fiction.
 
 ## Create a role
 
@@ -41,6 +41,12 @@ The browser fits the image within 512 × 512 pixels without upscaling, preservin
 
 Role avatars appear in the role rail, group selector and transcript. They are display data, not image input to the text model. Role-avatar changes follow the same pending-work edit guard as the SOUL. For your own Theater avatar, use **Settings → Theater → Operator profile** and **Save profile**; it is separate from your normal Burrow identity.
 
+## Add a canonical reference photo
+
+Save the role first, then use its separate **Reference photo → Upload** control, or focus that control and paste an image. Choose an original PNG, JPEG, or WebP up to **20 MiB**. Unlike avatars, reference photos save immediately and independently: do not use **Save role** to commit a photo. **Replace** changes the canonical photo for future illustrations; **Remove** clears it. Neither rewrites existing images or changes an unsaved name/SOUL/avatar draft.
+
+The preview uses authenticated Core media access, not a public image URL. Wait for pending text or Forge image work before replacing/removing a role's photo. A preview failure offers **Retry** without requiring another upload. See [cast reference photos and generation behavior](forge-images.md#canonical-cast-reference-photos-server-contract).
+
 ## Remove a role
 
 The delete button asks for confirmation. A role still referenced by any active or archived conversation cannot be deleted. In Theater Main, select each conversation that uses the role and choose **Delete**. After those transcripts are permanently removed, return to **Settings → Theater → Roles** and delete the role.
@@ -51,9 +57,7 @@ The delete button asks for confirmation. A role still referenced by any active o
 - SOUL: up to 48,000 characters.
 - Both fields must contain text after trimming whitespace.
 - Avatar source and saved-size limits are described above.
+- Reference photo: PNG, JPEG, or WebP; at most 20 MiB, independently saved.
 - The current editor does not provide character-card import or a separate scenario editor.
 
 A longer SOUL also makes every generated turn larger. Start with the details the character actually needs.
-
-
-
