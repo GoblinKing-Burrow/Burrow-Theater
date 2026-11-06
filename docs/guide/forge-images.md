@@ -50,6 +50,8 @@ The text turn returns before Forge job creation. While the conversation is open,
 - The preview when a successful job has an image preview URL.
 - An error state when Forge reports a failed or otherwise unsuccessful result.
 
+Theater continues to use Core's asynchronous ordinary-mod Forge facade, not the native agent `forge_create_job` tool. Native chat generation now waits and auto-delivers its own results, but Theater still owns its pending image cards and later reconciliation; that native behavior does not turn a Theater image request into a completed card or automatically attach it to a Burrow agent chat.
+
 Pending cards are checked again when the conversation is opened or reloaded. Each card has a stable request identity so retrying reconciliation can reuse its Forge job.
 
 ## Important boundaries
