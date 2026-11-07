@@ -43,6 +43,8 @@ Role avatars appear in the role rail, group selector and transcript. They are di
 
 ## Add a canonical reference photo
 
+The avatar and Reference photo editors appear side by side on wide screens and stack on narrower screens. The same arrangement applies to the Theater operator profile. Their save scopes remain independent.
+
 Save the role first, then use its separate **Reference photo → Upload** control, or focus that control and paste an image. Choose an original PNG, JPEG, or WebP up to **20 MiB**. Unlike avatars, reference photos save immediately and independently: do not use **Save role** to commit a photo. **Replace** changes the canonical photo for future illustrations; **Remove** clears it. Neither rewrites existing images or changes an unsaved name/SOUL/avatar draft.
 
 The preview uses authenticated Core media access, not a public image URL. Wait for pending text or Forge image work before replacing/removing a role's photo. A preview failure offers **Retry** without requiring another upload. See [cast reference photos and generation behavior](forge-images.md#canonical-cast-reference-photos-server-contract).
@@ -61,3 +63,4 @@ The delete button asks for confirmation. A role still referenced by any active o
 - The current editor does not provide character-card import or a separate scenario editor.
 
 A longer SOUL also makes every generated turn larger. Start with the details the character actually needs.
+

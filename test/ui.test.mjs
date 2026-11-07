@@ -210,3 +210,20 @@ test('reference paste uploads original bytes, rejects invalid files, and retries
  descendants(reference).find(n=>n.tagName==='BUTTON'&&n.textContent==='Retry').onclick();await settle();assert.equal(previews,2);assert.equal(calls.length,2);cleanup();
  }finally{globalThis.FileReader=oldReader;URL.createObjectURL=oldCreate;URL.revokeObjectURL=oldRevoke;}
 });
+
+for (const section of ['profile', 'roles']) {
+  test(`${section} groups avatar and reference photo side by side without moving other fields`, async () => {
+    const root = new FakeNode('div');
+    const cleanup = mountSettings({section, primary:{replace:nodes=>root.replaceChildren(...nodes)}, api:async path=>path.endsWith('/reference-image')?{ok:true,...(section==='roles'?{roleId:'house-goblin'}:{}),referenceImage:null}:bootstrap});
+    await settle();
+    const form = descendants(root).find(node=>node.tagName==='FORM');
+    const row = form.children[0];
+    assert.equal(row.className, 'theater-portrait-row');
+    assert.equal(row.children.length, 2);
+    assert.equal(row.children[0].className, 'theater-avatar-editor');
+    assert.equal(row.children[1].className, 'theater-avatar-editor theater-reference-editor');
+    assert.equal(form.children[1].tagName, 'LABEL');
+    assert.equal(descendants(form).filter(node=>node.tagName==='INPUT' && node.type==='file').length, 2);
+    cleanup();
+  });
+}
