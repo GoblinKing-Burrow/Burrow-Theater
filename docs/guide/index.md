@@ -41,3 +41,7 @@ All six guides were statically reviewed against Theater `74881aedf68870fa202f36a
 ## 2 November documentation update
 
 The ordinary delta review covers Theater `3034d1afc91261d6f1d13cb81d6a4e30b4728a8a`: independent role/player reference-photo controls and reuse of the ordered cast portraits for Forge illustrations. The full-review receipt above remains dated; this update used static source inspection, not application or live-provider tests.
+
+## 8 November 2026 full documentation reconciliation
+
+All six guides were statically compared with current role/profile editors, canonical reference photos, sequential generation and Forge reconciliation, prompt/transcript limits, lifecycle guards and checked-in tests. No runtime contract correction was required. Reviewed source `a7a5800244434a3ad96282d9e18c4bba1c8fb12e` against Core assembly `1f77c9d0277585bfe1963ce3ab3d2cdf35f16b9a`. No application tests, live chat/provider calls, paid generation, runtime edits or skill scripts were run. Documentation checks are separate from application acceptance.
